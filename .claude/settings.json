@@ -1,0 +1,6 @@
+{
+  "enabledPlugins": {
+    "kit@claude-kit": true,
+    "kit-python@claude-kit": true
+  }
+}
