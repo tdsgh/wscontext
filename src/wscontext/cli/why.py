@@ -125,6 +125,20 @@ def _commit_block(store: StorePaths, info: trace.CommitInfo, lines: list[int],
                   "linked": bool(sessions), "sessions": sessions})
 
 
+def _flags(blocks: list[Block]) -> list[str]:
+    """Freshness caveats of an answer, for the call log."""
+    flags = set()
+    for b in blocks:
+        if b.type == "uncommitted":
+            flags.add("uncommitted")
+        for s in b.extra.get("sessions", []):
+            if not s["available"]:
+                flags.add("session-unavailable")
+            elif not s["prompts_available"]:
+                flags.add("prompts-unavailable")
+    return sorted(flags)
+
+
 def run(args, store: StorePaths, config: Config) -> Reply:
     path, start, end, symbol = parse_target(args.target)
     absolute = (Path.cwd() / path).resolve()
@@ -162,4 +176,5 @@ def run(args, store: StorePaths, config: Config) -> Reply:
     return Reply(render(f"ctx why {where}", blocks, full=args.full, as_json=args.json,
                         omitted=left, hint="Rerun with --limit N or --full.",
                         meta={"file": rel, "lines": [start, end] if start is not None else None,
-                              "symbol": symbol}))
+                              "symbol": symbol}),
+                results=len(ordered), flags=_flags(blocks))

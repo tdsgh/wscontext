@@ -73,4 +73,5 @@ def run(args, store: StorePaths, config: Config) -> Reply:
     blocks = [_block(r, r.session_id in pending if shared else None) for r in shown]
     return Reply(render("ctx sessions", blocks, full=args.full, as_json=args.json,
                         omitted=len(found) - len(shown), hint="Rerun with --limit N or --full.",
-                        meta={"sharing_configured": shared, "total": len(found)}))
+                        meta={"sharing_configured": shared, "total": len(found)}),
+                results=len(found))

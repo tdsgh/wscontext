@@ -117,9 +117,12 @@ def render(command: str, blocks: list[Block], *, full: bool, as_json: bool,
 
 @dataclass
 class Reply:
-    """What a command hands back to `main`: the text to print and the exit code."""
+    """What a command hands back to `main`: the text to print, the exit code and call-log facts."""
     text: str
     code: int = 0
+    # Logged with the call so `ctx stats` can report result counts and freshness flags.
+    results: int | None = None
+    flags: list[str] = field(default_factory=list)
 
 
 def error(message: str, as_json: bool, **extra) -> Reply:

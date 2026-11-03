@@ -11,15 +11,15 @@ import time
 from pathlib import Path
 
 # Read and admin commands: name -> module with `add_arguments(parser)` and `run(args, store, config)`.
-# WP7 adds `"stats": "wscontext.cli.stats"` here.
 COMMANDS = {
     "why": "wscontext.cli.why",
     "sessions": "wscontext.cli.sessions",
     "show": "wscontext.cli.show",
     "forget": "wscontext.cli.forget",
+    "stats": "wscontext.cli.stats",
 }
 # Read commands that start the throttled background fetch when a sync remote is set (ADR-008).
-FETCHING = {"why", "sessions", "show"}
+FETCHING = {"why", "sessions", "show", "stats"}
 INTERNAL = {"hook", "worker", "git-hook"}
 # Options before the command name: the launcher's (ignored), then the shared ones (kept).
 LAUNCHER_OPTIONS = {"--plugin-root", "--plugin-data"}
@@ -49,14 +49,15 @@ def _usage() -> str:
     return "usage: ctx [--json] [--limit N] [--full] <command> ...\ncommands: " + ", ".join(COMMANDS)
 
 
-def _log_call(store, config, argv: list[str], code: int, started: float, out: str) -> None:
+def _log_call(store, config, argv: list[str], reply, started: float) -> None:
     """One `ctx-calls` line per call; the stats join it with the hook-side line by argv and time."""
     from wscontext.logs import CTX_CALLS_LOG, append_log, now_iso
     try:
         append_log(store, config, CTX_CALLS_LOG, {
-            "ts": now_iso(), "source": "cli", "cwd": str(Path.cwd()), "argv": argv, "exit": code,
+            "ts": now_iso(), "source": "cli", "cwd": str(Path.cwd()), "argv": argv, "exit": reply.code,
             "ms": round((time.monotonic() - started) * 1000),
-            "output_bytes": len(out.encode("utf-8"))})
+            "output_bytes": len(reply.text.encode("utf-8")),
+            "results": reply.results, "flags": reply.flags})
     except OSError:
         pass
 
@@ -117,7 +118,7 @@ def main(argv: list[str] | None = None) -> int:
     # Errors go to stderr, except as JSON, which a caller parses from stdout.
     print(reply.text, file=sys.stderr if reply.code and not args.json else sys.stdout)
     if store is not None:
-        _log_call(store, config, [name, *rest], reply.code, started, reply.text)
+        _log_call(store, config, [name, *rest], reply, started)
     return reply.code
 
 
