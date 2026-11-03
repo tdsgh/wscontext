@@ -39,3 +39,11 @@ def test_committed_config_matches_defaults():
     from pathlib import Path
     repo = Path(__file__).resolve().parent.parent
     assert load_config(repo) == Config()
+
+
+def test_capture_and_log_settings(tmp_path):
+    d = tmp_path / ".wscontext"
+    d.mkdir()
+    (d / "config.toml").write_text('[capture]\nprecompact_snapshot = false\n[logs]\nmax_bytes = 10\n')
+    cfg = load_config(tmp_path)
+    assert cfg.capture.precompact_snapshot is False and cfg.logs.max_bytes == 10

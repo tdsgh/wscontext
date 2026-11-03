@@ -30,11 +30,24 @@ class HookConfig:
 
 
 @dataclass(frozen=True)
+class CaptureConfig:
+    # on until the PreCompact open question is answered
+    precompact_snapshot: bool = True
+
+
+@dataclass(frozen=True)
+class LogsConfig:
+    max_bytes: int = 1_048_576
+
+
+@dataclass(frozen=True)
 class Config:
     redaction: RedactionConfig = field(default_factory=RedactionConfig)
     retention: RetentionConfig = field(default_factory=RetentionConfig)
     sync: SyncConfig = field(default_factory=SyncConfig)
     hooks: HookConfig = field(default_factory=HookConfig)
+    capture: CaptureConfig = field(default_factory=CaptureConfig)
+    logs: LogsConfig = field(default_factory=LogsConfig)
 
 
 def _build(cls, data: dict, where: str):
@@ -57,7 +70,8 @@ def load_config(repo_root: Path) -> Config:
     with path.open("rb") as f:
         data = tomllib.load(f)
     sections = {"redaction": RedactionConfig, "retention": RetentionConfig,
-                "sync": SyncConfig, "hooks": HookConfig}
+                "sync": SyncConfig, "hooks": HookConfig,
+                "capture": CaptureConfig, "logs": LogsConfig}
     kwargs = {}
     for key, value in data.items():
         if key in sections and isinstance(value, dict):

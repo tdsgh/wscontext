@@ -10,3 +10,9 @@ fetch_throttle_seconds = 300
 
 [hooks]
 time_budget_ms = 2000
+
+[capture]
+precompact_snapshot = true
+
+[logs]
+max_bytes = 1048576

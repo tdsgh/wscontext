@@ -1,0 +1,1 @@
+{"session_id":"sess-cap1","transcript_path":"{transcript}","cwd":"{cwd}","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"ctx why src/a.py:10"},"tool_response":{"stdout":"answer text"}}

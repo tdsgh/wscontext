@@ -1,0 +1,1 @@
+{"session_id":"sess-cap1","transcript_path":"{transcript}","cwd":"{cwd}","hook_event_name":"PostToolUse","tool_name":"Read","tool_input":{"file_path":"{cwd}/a.txt"},"tool_response":{"content":"a"}}
