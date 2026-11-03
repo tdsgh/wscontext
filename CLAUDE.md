@@ -58,6 +58,7 @@ it instead of restating them — `→ ADR-0NN` refers to
 | I want to... | See |
 |---|---|
 | Understand the system as a whole | [docs/architecture.md](docs/architecture.md) |
+| Understand what wscontext does for a developer | [docs/what-wscontext-does.md](docs/what-wscontext-does.md) |
 | Check what's already been decided | [docs/adr.md](docs/adr.md) |
 | Understand why a decision was taken | [docs/design-rationale.md](docs/design-rationale.md) |
 | See the stages and how to run one | [docs/roadmap.md](docs/roadmap.md) |
