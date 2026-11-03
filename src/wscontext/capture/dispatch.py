@@ -4,6 +4,7 @@ import json
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from wscontext.capture.handlers import HANDLERS
@@ -12,34 +13,19 @@ from wscontext.logs import HOOKS_LOG, append_log, now_iso
 from wscontext.store.paths import StorePaths, is_safe_name
 
 
-def run(event: str, raw: str) -> dict:
-    """Run one hook to completion or to its time budget; returns the hook-run log entry.
+def run_budgeted(event: str, work: Callable[[dict, dict], None]) -> dict:
+    """Run `work(entry, ctx)` to completion or to its time budget; returns the hook-run log entry.
 
-    Never raises.
+    `work` puts `store` and `config` into `ctx` as soon as it knows them, so the
+    configured budget applies and the entry is logged. Never raises.
     """
     started = time.monotonic()
     entry: dict = {"ts": now_iso(), "event": event, "ok": True}
     ctx: dict = {}
 
-    def work() -> None:
-        payload = json.loads(raw)
-        if not isinstance(payload, dict):
-            raise ValueError("hook input is not a JSON object")
-        sid = payload.get("session_id")
-        entry["session_id"] = sid
-        handler = HANDLERS.get(event.lower().replace("-", "").replace("_", ""))
-        if handler is None:
-            raise ValueError(f"unknown hook event {event!r}")
-        if not isinstance(sid, str) or not is_safe_name(sid):
-            raise ValueError("missing or unsafe session_id")
-        store = StorePaths.resolve(Path(payload.get("cwd") or "."))
-        ctx["store"] = store
-        ctx["config"] = load_config(store.root)
-        handler(store, ctx["config"], payload)
-
     def guarded() -> None:
         try:
-            work()
+            work(entry, ctx)
         except BaseException as e:
             entry["ok"] = False
             entry["error"] = f"{type(e).__name__}: {e}"
@@ -61,6 +47,28 @@ def run(event: str, raw: str) -> dict:
         except BaseException:
             pass
     return entry
+
+
+def run(event: str, raw: str) -> dict:
+    """Run one Claude Code hook; returns the hook-run log entry. Never raises."""
+
+    def work(entry: dict, ctx: dict) -> None:
+        payload = json.loads(raw)
+        if not isinstance(payload, dict):
+            raise ValueError("hook input is not a JSON object")
+        sid = payload.get("session_id")
+        entry["session_id"] = sid
+        handler = HANDLERS.get(event.lower().replace("-", "").replace("_", ""))
+        if handler is None:
+            raise ValueError(f"unknown hook event {event!r}")
+        if not isinstance(sid, str) or not is_safe_name(sid):
+            raise ValueError("missing or unsafe session_id")
+        store = StorePaths.resolve(Path(payload.get("cwd") or "."))
+        ctx["store"] = store
+        ctx["config"] = load_config(store.root)
+        handler(store, ctx["config"], payload)
+
+    return run_budgeted(event, work)
 
 
 def main(argv: list[str]) -> int:

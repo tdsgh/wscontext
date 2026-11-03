@@ -33,6 +33,8 @@ class HookConfig:
 class CaptureConfig:
     # on until the PreCompact open question is answered
     precompact_snapshot: bool = True
+    # a session idle for longer is not linked to a commit (open question 2)
+    stale_session_minutes: int = 120
 
 
 @dataclass(frozen=True)

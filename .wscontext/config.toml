@@ -13,6 +13,7 @@ time_budget_ms = 2000
 
 [capture]
 precompact_snapshot = true
+stale_session_minutes = 120
 
 [logs]
 max_bytes = 1048576

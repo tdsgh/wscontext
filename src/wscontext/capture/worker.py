@@ -33,8 +33,8 @@ def detach_kwargs(platform: str) -> dict:
     return {"start_new_session": True}
 
 
-def spawn_worker(args: list[str], cwd: Path) -> None:
-    subprocess.Popen([sys.executable, "-m", "wscontext.capture.worker", *args],
+def spawn_worker(args: list[str], cwd: Path, module: str = "wscontext.capture.worker") -> None:
+    subprocess.Popen([sys.executable, "-m", module, *args],
                      cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, **detach_kwargs(sys.platform))
 
