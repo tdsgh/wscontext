@@ -106,7 +106,7 @@ def _final(store: StorePaths, config: Config, session_id: str, transcript: Path,
     record.files_touched = sorted(set(record.files_touched) | set(state.get("files", [])))
     record.ended_at = now_iso()
     record.head_end = git_value(store, "rev-parse", "HEAD")
-    write_session(store, record)
+    write_session(store, record, config)
     commit_paths(store, [raw, *copied, store.records / "sessions" / f"{session_id}.json"],
                  f"wscontext: session {session_id}")
     turn_state_path(store, session_id).unlink(missing_ok=True)

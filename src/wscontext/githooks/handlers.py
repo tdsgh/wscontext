@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from wscontext.capture.state import active_path, git_value, read_json, turn_state_path
+from wscontext.capture.state import active_path, git_value, read_json, turn_state_path, worktree_key
 from wscontext.capture.worker import spawn_worker
 from wscontext.config import Config
 from wscontext.gitutil import git
@@ -34,7 +34,7 @@ def _timestamp(value) -> float:
 
 def active_sessions(store: StorePaths, config: Config) -> list[str]:
     """Sessions active in this worktree with activity inside the staleness window, oldest first."""
-    sessions = read_json(active_path(store)).get(str(store.root))
+    sessions = read_json(active_path(store)).get(worktree_key(store, config))
     if not isinstance(sessions, dict):
         return []
     cutoff = time.time() - config.capture.stale_session_minutes * 60

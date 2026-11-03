@@ -47,6 +47,17 @@ def redact_text(text: str, config: Config) -> tuple[str, list[str]]:
     return redact(text, config.redaction.extra_patterns)
 
 
+def redact_value(value, config: Config):
+    """Redact every string, dict key included, in a JSON-shaped value. The shape never changes."""
+    if isinstance(value, str):
+        return redact_text(value, config)[0]
+    if isinstance(value, dict):
+        return {redact_value(k, config): redact_value(v, config) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [redact_value(v, config) for v in value]
+    return value
+
+
 def redact_bytes(data: bytes, config: Config) -> tuple[bytes, list[str]]:
     """The single entry point for content arriving as bytes, e.g. history copied from teammates."""
     text, hits = redact(data.decode("utf-8", errors="surrogateescape"),

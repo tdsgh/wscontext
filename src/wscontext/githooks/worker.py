@@ -15,7 +15,6 @@ from wscontext.gitutil import git
 from wscontext.history import sync
 from wscontext.history.branch import commit_paths
 from wscontext.logs import HOOKS_LOG, append_log, now_iso
-from wscontext.redact.redactor import redact_text
 from wscontext.store.locks import FileLock
 from wscontext.store.paths import StorePaths, is_safe_name
 from wscontext.store.records import (CheckpointRecord, RecordError, read_checkpoint,
@@ -66,10 +65,10 @@ def write_linked_checkpoint(store: StorePaths, config: Config, sha: str, author:
         return None
     files, insertions, deletions = _diff_stats(store, sha)
     return write_checkpoint(store, CheckpointRecord(
-        sha=sha, author=redact_text(author, config)[0], session_ids=sorted(ids),
+        sha=sha, author=author, session_ids=sorted(ids),
         created_at=existing.created_at if existing else now_iso(), files_changed=files,
         insertions=insertions, deletions=deletions,
-        rewritten_from=(existing.rewritten_from if existing else None) or rewritten_from))
+        rewritten_from=(existing.rewritten_from if existing else None) or rewritten_from), config)
 
 
 def _checkpoints(store: StorePaths, config: Config, action: str, arg: str) -> int:

@@ -1,5 +1,6 @@
 from support import hook, transcript  # noqa: F401  (fixtures)
 import json
+import subprocess
 
 from wscontext.history.branch import ls_blobs, read_tip
 from wscontext.store.records import read_session
@@ -85,3 +86,20 @@ def test_unsupported_format_degrades_to_raw_copy(hook, transcript):
     rec = read_session(hook.store, "sess-cap1")
     assert rec.ended_at and len(rec.turns) == 1 and rec.turns[0].tool_calls == {}
     assert list((hook.store.raw / "sessions").glob("*-sess-cap1.jsonl"))
+
+
+def test_no_secret_in_a_branch_name_reaches_disk(hook, git_repo):
+    secret = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
+    subprocess.run(["git", "checkout", "-q", "-b", f"feat/{secret}"], cwd=git_repo, check=True)
+    for event, fixture in [("SessionStart", "session_start"), ("UserPromptSubmit", "user_prompt_submit"),
+                           ("PostToolUse", "post_tool_use_edit"), ("Stop", "stop"),
+                           ("SessionEnd", "session_end")]:
+        assert hook(event, fixture)["ok"]
+    store = hook.store
+    assert read_session(store, "sess-cap1").branch == "feat/[REDACTED:github-token]"
+    for path in store.local.rglob("*"):
+        if path.is_file():
+            assert secret.encode() not in path.read_bytes(), path
+    for rel, (_, sha, _) in ls_blobs(store, read_tip(store)).items():
+        assert secret.encode() not in subprocess.run(
+            ["git", "cat-file", "blob", sha], cwd=git_repo, capture_output=True).stdout, rel

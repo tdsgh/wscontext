@@ -7,7 +7,8 @@ from githook_support import (activate, checkpoint, deactivate, git_run, head, is
 
 from conftest import run_git
 
-from wscontext.capture.state import turn_state_path
+from wscontext.capture.state import read_json, active_path, turn_state_path, worktree_key
+from wscontext.config import load_config
 from wscontext.githooks import dispatch, handlers
 from wscontext.githooks.install import install
 from wscontext.history.branch import HISTORY_REF, read_tip
@@ -38,6 +39,24 @@ def test_commit_with_active_session_gets_trailer_and_checkpoint(repo):
     assert rec.rewritten_from is None and _on_branch(repo, sha)
     assert head(repo) == sha and run_git(repo, "status", "--porcelain") == ""
     assert all(e["ok"] for e in log_lines(store, "git:post-commit"))
+
+
+def test_redacted_worktree_path_still_finds_the_active_session(repo):
+    # a rule matching the worktree path redacts the active.json key; lookups must follow
+    (repo / ".wscontext").mkdir()
+    (repo / ".wscontext" / "config.toml").write_text('[redaction]\nextra_patterns = ["repo$"]\n')
+    store = StorePaths.resolve(repo)
+    config = load_config(repo)
+    activate(store, "s-1", config=config)
+    key = worktree_key(store, config)
+    assert key.endswith("[REDACTED:custom-1]") and str(store.root) not in read_json(active_path(store))
+    assert list(read_json(active_path(store))[key]) == ["s-1"]
+    sha = _commit(repo, "b.txt")
+    assert trailers(repo) == ["s-1"]
+    wait_log(store, "worker:git-checkpoint")
+    assert checkpoint(store, sha).session_ids == ["s-1"]
+    deactivate(store, "s-1", config)
+    assert read_json(active_path(store)) == {key: {}}
 
 
 def test_commit_with_no_session_gets_neither(repo):

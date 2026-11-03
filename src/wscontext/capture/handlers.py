@@ -5,7 +5,7 @@ from pathlib import Path
 from wscontext.capture import worker
 from wscontext.capture.kinds import ctx_invocations, tool_kind
 from wscontext.capture.state import (active_path, git_author, git_value, turn_state_path,
-                                     update_json)
+                                     update_json, worktree_key)
 from wscontext.config import Config
 from wscontext.logs import CTX_CALLS_LOG, append_log, now_iso
 from wscontext.store.paths import StorePaths
@@ -28,9 +28,10 @@ def session_start(store: StorePaths, config: Config, payload: dict) -> None:
             session_id=sid, author=git_author(store),
             branch=git_value(store, "rev-parse", "--abbrev-ref", "HEAD"),
             worktree=str(store.root), head_start=git_value(store, "rev-parse", "HEAD"),
-            started_at=now_iso()))
+            started_at=now_iso()), config)
     update_json(active_path(store),
-                lambda d: d.setdefault(str(store.root), {}).setdefault(sid, now_iso()))
+                lambda d: d.setdefault(worktree_key(store, config), {}).setdefault(sid, now_iso()),
+                config)
     if config.sync.remote:
         _spawn(store, "fetch", payload)
 
@@ -39,7 +40,7 @@ def user_prompt_submit(store: StorePaths, config: Config, payload: dict) -> None
     def start(d: dict) -> None:
         d.setdefault("turns", []).append({"started_at": now_iso(), "ended_at": None})
 
-    update_json(turn_state_path(store, payload["session_id"]), start)
+    update_json(turn_state_path(store, payload["session_id"]), start, config)
 
 
 def post_tool_use(store: StorePaths, config: Config, payload: dict) -> None:
@@ -67,7 +68,7 @@ def post_tool_use(store: StorePaths, config: Config, payload: dict) -> None:
             if rel not in d.setdefault("files", []):
                 d["files"].append(rel)
 
-    update_json(turn_state_path(store, payload["session_id"]), count)
+    update_json(turn_state_path(store, payload["session_id"]), count, config)
     response = payload.get("tool_response")
     out = response.get("stdout") if isinstance(response, dict) else response
     for _, argv in calls:
@@ -83,7 +84,7 @@ def stop(store: StorePaths, config: Config, payload: dict) -> None:
         if turns and turns[-1].get("ended_at") is None:
             turns[-1]["ended_at"] = now_iso()
 
-    update_json(turn_state_path(store, payload["session_id"]), close)
+    update_json(turn_state_path(store, payload["session_id"]), close, config)
     _spawn(store, "copy", payload)
 
 
@@ -91,12 +92,13 @@ def session_end(store: StorePaths, config: Config, payload: dict) -> None:
     sid = payload["session_id"]
 
     def drop(d: dict) -> None:
-        sessions = d.get(str(store.root), {})
+        key = worktree_key(store, config)
+        sessions = d.get(key, {})
         sessions.pop(sid, None)
         if not sessions:
-            d.pop(str(store.root), None)
+            d.pop(key, None)
 
-    update_json(active_path(store), drop)
+    update_json(active_path(store), drop, config)
     _spawn(store, "final", payload)
 
 

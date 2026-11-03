@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from wscontext.capture.state import active_path, update_json
+from wscontext.capture.state import active_path, update_json, worktree_key
+from wscontext.config import Config
 from wscontext.githooks.install import install
 from wscontext.store.paths import StorePaths
 from wscontext.store.records import RecordError, read_checkpoint
@@ -72,14 +73,17 @@ def pty_run(tmp_path: Path, cwd: Path, *cmd: str, timeout: float) -> int:
                           timeout=timeout).returncode
 
 
-def activate(store: StorePaths, sid: str, minutes_ago: float = 0) -> None:
+def activate(store: StorePaths, sid: str, minutes_ago: float = 0,
+             config: Config = Config()) -> None:
     """Mark a session active in the store's worktree, as the SessionStart hook does."""
     at = (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).isoformat(timespec="seconds")
-    update_json(active_path(store), lambda d: d.setdefault(str(store.root), {}).__setitem__(sid, at))
+    update_json(active_path(store), lambda d: d.setdefault(worktree_key(store, config), {}).__setitem__(sid, at),
+                config)
 
 
-def deactivate(store: StorePaths, sid: str) -> None:
-    update_json(active_path(store), lambda d: d.get(str(store.root), {}).pop(sid, None))
+def deactivate(store: StorePaths, sid: str, config: Config = Config()) -> None:
+    update_json(active_path(store), lambda d: d.get(worktree_key(store, config), {}).pop(sid, None),
+                config)
 
 
 def log_lines(store: StorePaths, event: str) -> list[dict]:

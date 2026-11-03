@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 from typing import ClassVar
 
+from wscontext.redact.redactor import redact_value
+from wscontext.config import Config
 from wscontext.store.paths import StorePaths, is_safe_name
 
 
@@ -105,10 +107,15 @@ def _from_dict(cls, data):
         raise RecordError(f"{cls.__name__}: {e}") from None
 
 
-def write_record(path: Path, rec) -> Path:
-    text = json.dumps(asdict(rec), ensure_ascii=False, indent=2, sort_keys=True)
+def write_json(path: Path, value, config: Config, **dumps_kwargs) -> Path:
+    """The one writer for JSON in the store: redacts every string, then writes atomically."""
+    text = json.dumps(redact_value(value, config), sort_keys=True, **dumps_kwargs)
     atomic_write(path, text.encode("utf-8") + b"\n")
     return path
+
+
+def write_record(path: Path, rec, config: Config) -> Path:
+    return write_json(path, asdict(rec), config, ensure_ascii=False, indent=2)
 
 
 def read_record[R](path: Path, cls: type[R]) -> R:
@@ -133,16 +140,16 @@ def checkpoint_path(store: StorePaths, sha: str) -> Path:
     return _named(store.records / "checkpoints", sha)
 
 
-def write_session(store: StorePaths, rec: SessionRecord) -> Path:
-    return write_record(session_path(store, rec.session_id), rec)
+def write_session(store: StorePaths, rec: SessionRecord, config: Config) -> Path:
+    return write_record(session_path(store, rec.session_id), rec, config)
 
 
 def read_session(store: StorePaths, session_id: str) -> SessionRecord:
     return read_record(session_path(store, session_id), SessionRecord)
 
 
-def write_checkpoint(store: StorePaths, rec: CheckpointRecord) -> Path:
-    return write_record(checkpoint_path(store, rec.sha), rec)
+def write_checkpoint(store: StorePaths, rec: CheckpointRecord, config: Config) -> Path:
+    return write_record(checkpoint_path(store, rec.sha), rec, config)
 
 
 def read_checkpoint(store: StorePaths, sha: str) -> CheckpointRecord:
