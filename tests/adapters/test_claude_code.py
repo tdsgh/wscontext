@@ -101,3 +101,32 @@ def test_tool_input_value_is_shortened():
 def test_unsupported_version_has_no_items():
     p = adapter.parse(FIX / "unknown_version.jsonl")
     assert p.turns == []
+
+
+def test_main_parse_still_skips_sidechain_lines():
+    p = adapter.parse(FIX / "subagent.jsonl")
+    assert p.supported and p.turns == []
+
+
+def test_subagent_file_parses_into_turn_and_items():
+    p = adapter.parse(FIX / "subagent.jsonl", sidechain=True)
+    assert p.supported and len(p.turns) == 1
+    items = p.turns[0].items
+    assert [i.kind for i in items] == [
+        "prompt", "text", "tool_call", "tool_result", "tool_call", "tool_result",
+        "subagent", "text"]
+    assert items[0].text == "explore the repo and report"
+    assert items[2].name == "Grep" and items[2].text == "pattern=retry"
+    assert items[6].agent_id == "nest1"
+    assert items[7].text == "Report: retry is in a.py."
+    assert p.turns[0].tool_calls == {"Grep": 1, "Task": 1}
+
+
+def test_subagent_parse_lists_only_nested_agents():
+    p = adapter.parse(FIX / "subagent.jsonl", sidechain=True)
+    assert [r.agent_id for r in p.subagents] == ["nest1"]
+
+
+def test_subagent_parse_of_unknown_version_is_unsupported():
+    p = adapter.parse(FIX / "unknown_version.jsonl", sidechain=True)
+    assert not p.supported and p.turns == []

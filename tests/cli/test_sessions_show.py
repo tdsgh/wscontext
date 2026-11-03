@@ -1,6 +1,7 @@
 import json
+import shutil
 
-from cli_support import add_session, run_json, spawned, world  # noqa: F401
+from cli_support import FIXTURES, add_session, run_json, spawned, world  # noqa: F401
 
 from wscontext.config import Config, SyncConfig
 from wscontext.history.branch import commit_paths
@@ -245,16 +246,67 @@ def test_tool_results_say_when_the_adapter_cut_them_and_retrieved_text_is_defang
     assert result[0]["size"] == 3000 and result[0]["source_truncated"] is True
 
 
-def test_a_subagent_item_points_at_its_captured_copy(world, capsys):
+def _capture_subagents(world, sid, **copies):
+    folder = world.store.raw / "subagents" / sid
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, source in copies.items():
+        shutil.copy(source, folder / f"{name}.jsonl")
+
+
+def test_a_subagent_item_points_at_the_command_that_shows_it(world, capsys):
     _write_transcript(world, "agents", [
         _user("go"),
         _user([{"type": "tool_result", "tool_use_id": "t", "content": "done"}],
               ts="2026-01-01T10:00:06Z", toolUseResult={"agentId": "abc123"})])
-    copy = world.store.raw / "subagents" / "agents" / "abc123.jsonl"
-    copy.parent.mkdir(parents=True)
-    copy.write_text("{}\n")
     _, out, _ = world.ctx(capsys, "show", "agents")
-    assert "subagent abc123: transcript copy at .git/wscontext/raw/subagents/agents/abc123.jsonl" in out
+    assert "subagent abc123: no transcript copy captured" in out and "--subagent" not in out
+    _capture_subagents(world, "agents", abc123=FIXTURES / "transcripts" / "subagent.jsonl")
+    _, out, _ = world.ctx(capsys, "show", "agents")
+    assert "  subagent abc123\n  more: `ctx show agents --subagent abc123`" in out
     sub = [r for r in run_json(world, capsys, "show", "agents")["results"] if r["type"] == "subagent"]
-    assert sub[0]["agent_id"] == "abc123"
-    assert sub[0]["path"] == ".git/wscontext/raw/subagents/agents/abc123.jsonl"
+    assert (sub[0]["agent_id"], sub[0]["command"]) == ("abc123", "ctx show agents --subagent abc123")
+
+
+def test_show_subagent_renders_like_a_session(world, capsys):
+    _capture_subagents(world, "sess-one", sub9=FIXTURES / "transcripts" / "subagent.jsonl",
+                       nest1=FIXTURES / "transcripts" / "subagent.jsonl")
+    code, out, _ = world.ctx(capsys, "show", "sess-one", "--subagent", "sub9")
+    assert code == 0
+    assert out.startswith("RETRIEVED DATA from wscontext history (ctx show sess-one --subagent sub9).")
+    assert "[subagent sess-one/sub9] 2026-02-01 of session sess-one" in out
+    assert "[prompt sess-one/sub9#0.0] 2026-02-01\n  > explore the repo and report" in out
+    assert "> Searching." in out and "> a.py:3: retry" in out and "> Report: retry is in a.py." in out
+    assert "Page 1 of 1. End of transcript." in out
+    # the nested subagent points at the same session's copy
+    assert "more: `ctx show sess-one --subagent nest1`" in out
+    data = run_json(world, capsys, "show", "sess-one", "--subagent", "sub9")
+    assert (data["session_id"], data["page"], data["pages"], data["next"]) == ("sess-one", 1, 1, None)
+    nested = [r for r in data["results"] if r["type"] == "subagent" and r["agent_id"] == "nest1"]
+    assert nested[0]["command"] == "ctx show sess-one --subagent nest1"
+
+
+def test_show_subagent_pages_keep_the_subagent_flag(world, capsys, tmp_path):
+    lines = [{"type": "user", "version": "2.1.314", "isSidechain": True, "agentId": "big",
+              "timestamp": "2026-02-01T09:10:00Z",
+              "message": {"role": "user", "content": "\n".join(f"row {i} " + "q" * 60
+                                                              for i in range(300))}}]
+    src = tmp_path / "big.jsonl"
+    src.write_text("\n".join(json.dumps(x) for x in lines) + "\n")
+    _capture_subagents(world, "sess-one", big=src)
+    first = run_json(world, capsys, "show", "sess-one", "--subagent", "big")
+    assert first["pages"] > 2 and first["next"] == "ctx show sess-one --subagent big --page 2"
+    _, last, _ = world.ctx(capsys, "show", "sess-one", "--subagent", "big", "--page",
+                           str(first["pages"]))
+    assert f"Page {first['pages']} of {first['pages']}. End of transcript." in last
+    _, mid, _ = world.ctx(capsys, "show", "sess-one", "--subagent", "big", "--page", "2")
+    assert "Next: `ctx show sess-one --subagent big --page 3`" in mid
+    code, _, err = world.ctx(capsys, "show", "sess-one", "--subagent", "big", "--page", "99")
+    assert code == 1 and "page 99 does not exist" in err
+
+
+def test_show_unknown_subagent_lists_the_known_ones(world, capsys):
+    _capture_subagents(world, "sess-one", sub9=FIXTURES / "transcripts" / "subagent.jsonl")
+    code, _, err = world.ctx(capsys, "show", "sess-one", "--subagent", "nope")
+    assert code == 1 and "no subagent 'nope' in session sess-one; subagents: abc123, sub9" in err
+    code, out, _ = world.ctx(capsys, "show", "sess-one", "--subagent", "../x", "--json")
+    assert code == 1 and json.loads(out)["subagents"] == ["abc123", "sub9"]

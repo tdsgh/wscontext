@@ -1,0 +1,8 @@
+{"type":"attachment","version":"2.1.314","agentId":"sub9","isSidechain":true,"attachment":{"type":"x"}}
+{"type":"user","version":"2.1.314","agentId":"sub9","isSidechain":true,"timestamp":"2026-02-01T09:10:00Z","message":{"role":"user","content":"explore the repo and report"}}
+{"type":"api-request","version":"2.1.314","agentId":"sub9","isSidechain":true}
+{"type":"assistant","version":"2.1.314","agentId":"sub9","timestamp":"2026-02-01T09:10:02Z","message":{"id":"a1","role":"assistant","content":[{"type":"text","text":"Searching."},{"type":"tool_use","id":"u1","name":"Grep","input":{"pattern":"retry"}}]}}
+{"type":"user","version":"2.1.314","agentId":"sub9","isSidechain":true,"timestamp":"2026-02-01T09:10:03Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"u1","content":"a.py:3: retry"}]}}
+{"type":"assistant","version":"2.1.314","agentId":"sub9","isSidechain":true,"timestamp":"2026-02-01T09:10:04Z","message":{"id":"a2","role":"assistant","content":[{"type":"tool_use","id":"u2","name":"Task","input":{"description":"nested"}}]}}
+{"type":"user","version":"2.1.314","agentId":"sub9","isSidechain":true,"timestamp":"2026-02-01T09:10:05Z","toolUseResult":{"agentId":"nest1","status":"completed"},"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"u2","content":"nested done"}]}}
+{"type":"assistant","version":"2.1.314","agentId":"sub9","timestamp":"2026-02-01T09:10:06Z","message":{"id":"a3","role":"assistant","content":[{"type":"text","text":"Report: retry is in a.py."}]}}

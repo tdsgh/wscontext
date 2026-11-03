@@ -78,7 +78,9 @@ class ClaudeCodeAdapter:
                 return True
         return False
 
-    def parse(self, path: Path) -> ParsedTranscript:
+    def parse(self, path: Path, sidechain: bool = False) -> ParsedTranscript:
+        """sidechain=True parses a subagent file: every line belongs to it, so none is
+        skipped as a sidechain line. The main session (default) skips sidechain lines."""
         text = path.read_bytes().decode("utf-8", errors="replace")
         out = ParsedTranscript()
         objs: list[dict] = []
@@ -98,16 +100,16 @@ class ClaudeCodeAdapter:
         if not out.supported:
             return out
         out.events = [Event(str(o.get("type", "")), o.get("timestamp")) for o in objs]
-        out.turns = self._turns(objs)
-        out.subagents = self._subagents(path, objs)
+        out.turns = self._turns(objs, sidechain)
+        out.subagents = self._subagents(path, objs, sidechain)
         return out
 
-    def _turns(self, objs: Iterable[dict]) -> list[Turn]:
+    def _turns(self, objs: Iterable[dict], sidechain: bool = False) -> list[Turn]:
         turns: list[Turn] = []
         usage: dict[str, dict[str, int]] = {}  # message key -> usage, last write wins
         usages: list[dict[str, dict[str, int]]] = []
         for n, obj in enumerate(objs):
-            if obj.get("isSidechain") or not isinstance(obj.get("message"), dict):
+            if (obj.get("isSidechain") and not sidechain) or not isinstance(obj.get("message"), dict):
                 continue
             message = obj["message"]
             if obj.get("type") == "user" and not obj.get("isMeta"):
@@ -162,11 +164,15 @@ class ClaudeCodeAdapter:
         if isinstance(result, dict) and isinstance(result.get("agentId"), str):
             turn.items.append(Item("subagent", agent_id=result["agentId"]))
 
-    def _subagents(self, path: Path, objs: Iterable[dict]) -> list[SubagentRef]:
+    def _subagents(self, path: Path, objs: Iterable[dict],
+                   sidechain: bool = False) -> list[SubagentRef]:
         ids: list[str] = []
         for obj in objs:
             result = obj.get("toolUseResult")
-            agent_id = result.get("agentId") if isinstance(result, dict) else obj.get("agentId")
+            if isinstance(result, dict):
+                agent_id = result.get("agentId")
+            else:  # a subagent file carries its own id on every line
+                agent_id = None if sidechain else obj.get("agentId")
             if isinstance(agent_id, str) and agent_id and agent_id not in ids:
                 ids.append(agent_id)
         refs = []
