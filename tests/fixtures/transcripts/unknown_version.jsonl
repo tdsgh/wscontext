@@ -1,0 +1,2 @@
+{"type":"user","version":"9.1.0","sessionId":"s9","timestamp":"2026-01-01T10:00:00Z","message":{"role":"user","content":"hello"}}
+{"type":"assistant","version":"9.1.0","timestamp":"2026-01-01T10:00:01Z","message":{"id":"m","role":"assistant","content":[{"type":"text","text":"hi"}]}}

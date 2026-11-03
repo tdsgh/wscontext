@@ -1,0 +1,12 @@
+{"type":"summary","summary":"hand-written sample","leafUuid":"u0"}
+{"type":"user","version":"2.0.5","sessionId":"sess1","uuid":"u1","timestamp":"2026-01-01T10:00:00Z","message":{"role":"user","content":"add a retry to the fetcher"}}
+{"type":"assistant","version":"2.0.5","uuid":"u2","timestamp":"2026-01-01T10:00:05Z","message":{"id":"m1","role":"assistant","content":[{"type":"text","text":"Looking."}],"usage":{"input_tokens":10,"output_tokens":3,"cache_read_input_tokens":100}}}
+{"type":"assistant","version":"2.0.5","uuid":"u3","timestamp":"2026-01-01T10:00:06Z","message":{"id":"m1","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"a.py"}}],"usage":{"input_tokens":10,"output_tokens":5,"cache_read_input_tokens":100}}}
+{"type":"user","version":"2.0.5","uuid":"u4","timestamp":"2026-01-01T10:00:07Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"file body"}]}}
+{"type":"assistant","version":"2.0.5","uuid":"u5","timestamp":"2026-01-01T10:00:09Z","message":{"id":"m2","role":"assistant","content":[{"type":"tool_use","id":"t2","name":"Task","input":{"description":"explore"}},{"type":"tool_use","id":"t3","name":"Read","input":{}}],"usage":{"input_tokens":20,"output_tokens":7}}}
+{"type":"user","version":"2.0.5","uuid":"u6","timestamp":"2026-01-01T10:00:20Z","toolUseResult":{"agentId":"abc123","status":"completed"},"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t2","content":"done"}]}}
+{"type":"user","version":"2.0.5","uuid":"u7","timestamp":"2026-01-01T10:01:00Z","message":{"role":"user","content":[{"type":"text","text":"now add a test"}]}}
+{"type":"assistant","version":"2.0.5","uuid":"u8","timestamp":"2026-01-01T10:01:04Z","message":{"id":"m3","role":"assistant","content":[{"type":"text","text":"Done."}]}}
+{"type":"user","version":"2.0.5","uuid":"u9","isSidechain":true,"timestamp":"2026-01-01T10:01:05Z","message":{"role":"user","content":"sidechain prompt, not a turn"}}
+this line is not json
+{"truncated": 
