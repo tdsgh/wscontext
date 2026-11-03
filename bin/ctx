@@ -1,0 +1,14 @@
+#!/bin/sh
+# wscontext launcher: keeps a uv environment in the plugin data dir and runs ctx from it; a hook call never waits on the build and never fails.
+r=$(cd "$(dirname "$0")/.." && pwd); d=
+while [ "$1" = --plugin-root ] || [ "$1" = --plugin-data ]; do [ "$1" = --plugin-data ] && d=$2; shift 2; done
+d=${d:-$HOME/.claude/plugins/data/wscontext-wscontext}; v=$d/venv; s="$r $(cksum < "$r/uv.lock")"; k=$d/lock; hook=; case $1 in hook|git-hook) hook=1;; esac
+fresh() { [ "$(cat "$v/.lock-hash" 2>/dev/null)" = "$s" ]; }
+build() { find "$k" -maxdepth 0 -mmin +15 -exec rmdir {} + 2>/dev/null; mkdir "$k" 2>/dev/null || return 1; UV_PROJECT_ENVIRONMENT=$v uv sync --frozen --no-dev --no-editable --python "$(command -v python3.13 || echo 3.13)" --project "$r" && printf %s "$s" > "$v/.lock-hash"; e=$?; rmdir "$k"; return $e; }
+mkdir -p "$d" && { [ "$(cat "$d/plugin-root" 2>/dev/null)" = "$r" ] || printf %s "$r" > "$d/plugin-root"; }
+if ! fresh; then
+  command -v uv >/dev/null 2>&1 || { [ -n "$hook" ] && exit 0; echo "wscontext: uv is not installed (https://docs.astral.sh/uv/)" >&2; exit 1; }
+  if [ -n "$hook" ]; then (build </dev/null >/dev/null 2>&1 &); [ -x "$v/bin/ctx" ] || exit 0
+  else build >&2 || { while [ -d "$k" ]; do sleep 1; done; fresh || { echo "wscontext: environment build failed" >&2; exit 1; }; }; fi
+fi
+exec "$v/bin/ctx" --plugin-root "$r" --plugin-data "$d" "$@"

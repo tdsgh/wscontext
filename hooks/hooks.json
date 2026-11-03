@@ -1,0 +1,66 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ctx\" --plugin-root \"${CLAUDE_PLUGIN_ROOT}\" --plugin-data \"${CLAUDE_PLUGIN_DATA}\" hook SessionStart"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ctx\" --plugin-root \"${CLAUDE_PLUGIN_ROOT}\" --plugin-data \"${CLAUDE_PLUGIN_DATA}\" hook UserPromptSubmit"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ctx\" --plugin-root \"${CLAUDE_PLUGIN_ROOT}\" --plugin-data \"${CLAUDE_PLUGIN_DATA}\" hook PostToolUse",
+            "async": true
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ctx\" --plugin-root \"${CLAUDE_PLUGIN_ROOT}\" --plugin-data \"${CLAUDE_PLUGIN_DATA}\" hook PreCompact"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ctx\" --plugin-root \"${CLAUDE_PLUGIN_ROOT}\" --plugin-data \"${CLAUDE_PLUGIN_DATA}\" hook Stop"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/ctx\" --plugin-root \"${CLAUDE_PLUGIN_ROOT}\" --plugin-data \"${CLAUDE_PLUGIN_DATA}\" hook SessionEnd"
+          }
+        ]
+      }
+    ]
+  }
+}

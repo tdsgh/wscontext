@@ -1,0 +1,14 @@
+{
+  "name": "wscontext",
+  "owner": {
+    "name": "wscontext"
+  },
+  "description": "Marketplace for the wscontext plugin",
+  "plugins": [
+    {
+      "name": "wscontext",
+      "source": "./",
+      "description": "Captures Claude Code sessions, links them to Git commits and answers why code exists"
+    }
+  ]
+}

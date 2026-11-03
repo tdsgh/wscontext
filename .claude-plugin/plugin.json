@@ -1,0 +1,5 @@
+{
+  "name": "wscontext",
+  "version": "0.1.0",
+  "description": "Captures Claude Code sessions, links them to Git commits and answers why code exists"
+}

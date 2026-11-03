@@ -17,11 +17,15 @@ COMMANDS = {
     "show": "wscontext.cli.show",
     "forget": "wscontext.cli.forget",
     "stats": "wscontext.cli.stats",
+    "init": "wscontext.cli.init",
+    "doctor": "wscontext.cli.doctor",
+    "uninstall": "wscontext.cli.uninstall",
+    "sync": "wscontext.cli.sync",
 }
 # Read commands that start the throttled background fetch when a sync remote is set (ADR-008).
 FETCHING = {"why", "sessions", "show", "stats"}
 INTERNAL = {"hook", "worker", "git-hook"}
-# Options before the command name: the launcher's (ignored), then the shared ones (kept).
+# Options before the command name: the launcher's (kept for init and doctor), then the shared ones.
 LAUNCHER_OPTIONS = {"--plugin-root", "--plugin-data"}
 SHARED_FLAGS = {"--json", "--full"}
 
@@ -74,11 +78,12 @@ def _start_fetch(store) -> None:
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     lead: list[str] = []
+    launcher: dict[str, str] = {}
     while argv and argv[0].startswith("-"):
         option = argv.pop(0)
         if option in LAUNCHER_OPTIONS:
             if argv:
-                argv.pop(0)
+                launcher[option.removeprefix("--plugin-").replace("-", "_")] = argv.pop(0)
         elif option == "--limit" and argv:
             lead += [option, argv.pop(0)]
         elif option in SHARED_FLAGS:
@@ -99,6 +104,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = _parser(name)
     module.add_arguments(parser)
     args = parser.parse_args([*lead, *rest])
+    args.plugin_root, args.plugin_data = launcher.get("root"), launcher.get("data")
     started = time.monotonic()
 
     from wscontext.cli.output import error
@@ -116,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
             _start_fetch(store)
         reply = module.run(args, store, config)
     # Errors go to stderr, except as JSON, which a caller parses from stdout.
-    print(reply.text, file=sys.stderr if reply.code and not args.json else sys.stdout)
+    print(reply.text, file=sys.stderr if reply.code and not (args.json or reply.report) else sys.stdout)
     if store is not None:
         _log_call(store, config, [name, *rest], reply, started)
     return reply.code

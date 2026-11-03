@@ -123,6 +123,8 @@ class Reply:
     # Logged with the call so `ctx stats` can report result counts and freshness flags.
     results: int | None = None
     flags: list[str] = field(default_factory=list)
+    # A report that goes to stdout even when its exit code says something failed.
+    report: bool = False
 
 
 def error(message: str, as_json: bool, **extra) -> Reply:

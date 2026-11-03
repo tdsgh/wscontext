@@ -44,8 +44,9 @@ def test_internal_commands_are_wired_to_their_modules(monkeypatch):
                     ("git-hook", ["pre-push", "origin", "url"])]
 
 
-def test_wip_commands_have_no_entry_yet():
-    assert set(ctx_main.COMMANDS) == {"why", "sessions", "show", "forget", "stats"}
+def test_command_table():
+    assert set(ctx_main.COMMANDS) == {"why", "sessions", "show", "forget", "stats", "init", "doctor",
+                                      "uninstall", "sync"}
 
 
 def test_a_command_imports_only_its_own_module(world):
