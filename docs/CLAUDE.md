@@ -10,6 +10,7 @@ folder is in `.claude/rules/kit-docs-gate.md`.
 |---|---|---|
 | `architecture.md` | What the system is | Edited in place; always describes now |
 | `adr.md` | What was decided | Append-only |
+| `roadmap.md` | The stages, their gates, and the loop to run each one | Edited when a stage is added, reshaped or passes its gate |
 | `<area>-phase-N.md` | What one stage of one area will build | Edited until that stage is built, then left alone |
 | `build-plan-<area>-phase-N.md` | The file-level technical design that builds one `<area>-phase-N.md` | Edited until that stage is built, then left alone |
 | `templates/` | The shapes new stage and build-plan documents start from | Kit-managed |

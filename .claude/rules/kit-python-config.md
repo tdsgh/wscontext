@@ -1,10 +1,10 @@
 <!-- kit:python/rules/config v1 -->
 # Configuration and secrets
 
-- All configuration flows through `.localAIharness/config.toml` via `TODO(kit): the function the harness calls to load settings`.
+- All configuration flows through `.wscontext/config.toml` via `wscontext.config.load_config()`.
   Never `os.environ` or `os.getenv` in application code. *(non-negotiable)*
 - A new setting is a field on a config model, with its default in
-  `.localAIharness/config.toml`.
+  `.wscontext/config.toml`.
 - Secrets never go in code or committed files. Local development reads them from
   gitignored env files. *(non-negotiable)*
 - Secret-bearing config fields are `SecretStr`.
