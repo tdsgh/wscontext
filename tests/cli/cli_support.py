@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from conftest import run_git
 
+from wscontext.capture import worker
 from wscontext.cli.main import main
 from wscontext.config import Config
 from wscontext.history.branch import commit_paths
@@ -73,7 +74,20 @@ class World:
 
 
 @pytest.fixture
-def world(git_repo: Path, monkeypatch) -> World:
+def spawned(monkeypatch):
+    """Record detached worker spawns instead of starting processes; `.real` is the original."""
+    calls: list[list[str]] = []
+
+    def fake(args, cwd, module="wscontext.capture.worker"):
+        calls.append(list(args))
+
+    fake.real = worker.spawn_worker
+    monkeypatch.setattr(worker, "spawn_worker", fake)
+    return calls
+
+
+@pytest.fixture
+def world(git_repo: Path, monkeypatch, spawned) -> World:
     """Lines 1,3-5 from c1 (session sess-one); line 2 from c2 (no session); line 5 edited, uncommitted."""
     monkeypatch.chdir(git_repo)
     store = StorePaths.resolve(git_repo)

@@ -5,10 +5,12 @@ import json
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from wscontext.adapters.base import Event, ParsedTranscript, SubagentRef, Turn
+from wscontext.adapters.base import Event, Item, ParsedTranscript, SubagentRef, Turn
 
 KNOWN_MAJOR_VERSIONS = frozenset({1, 2})
 PROMPT_PREVIEW = 200
+RESULT_LIMIT = 2000  # characters of a tool result kept in an Item
+INPUT_VALUE_LIMIT = 80
 TOKEN_KEYS = {"input_tokens": "input", "output_tokens": "output",
               "cache_read_input_tokens": "cache_read",
               "cache_creation_input_tokens": "cache_creation"}
@@ -36,6 +38,28 @@ def _prompt_text(message: dict) -> str | None:
     return None
 
 
+def _result_text(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(b["text"] for b in content
+                         if isinstance(b, dict) and isinstance(b.get("text"), str))
+    return ""
+
+
+def _input_summary(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    parts = []
+    for key, val in value.items():
+        shown = val if isinstance(val, str) else json.dumps(val, ensure_ascii=False)
+        shown = shown.replace("\n", " ")
+        if len(shown) > INPUT_VALUE_LIMIT:
+            shown = shown[:INPUT_VALUE_LIMIT] + "..."
+        parts.append(f"{key}={shown}")
+    return ", ".join(parts)
+
+
 def _major(version: object) -> int | None:
     if isinstance(version, str) and version.split(".")[0].isdigit():
         return int(version.split(".")[0])
@@ -43,6 +67,9 @@ def _major(version: object) -> int | None:
 
 
 class ClaudeCodeAdapter:
+    """Parses a Claude Code transcript from the store's raw copy, which is already
+    redacted. Reads only, writes nothing: callers render `Turn.items`, never persist them."""
+
     def detect(self, lines: Sequence[str]) -> bool:
         for line in lines:
             obj = _loads(line)
@@ -89,16 +116,25 @@ class ClaudeCodeAdapter:
                     usage = {}
                     usages.append(usage)
                     turns.append(Turn(index=len(turns), prompt=prompt[:PROMPT_PREVIEW],
-                                      started_at=obj.get("timestamp")))
+                                      started_at=obj.get("timestamp"),
+                                      items=[Item("prompt", prompt)]))
                     continue
+            if obj.get("type") == "user" and turns:
+                self._result_items(obj, message, turns[-1])
             if obj.get("type") == "assistant" and turns:
                 turn = turns[-1]
                 turn.ended_at = obj.get("timestamp") or turn.ended_at
                 content = message.get("content")
                 for block in content if isinstance(content, list) else ():
-                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") == "text" and isinstance(block.get("text"), str):
+                        turn.items.append(Item("text", block["text"]))
+                    elif block.get("type") == "tool_use":
                         name = str(block.get("name", "unknown"))
                         turn.tool_calls[name] = turn.tool_calls.get(name, 0) + 1
+                        turn.items.append(Item("tool_call", _input_summary(block.get("input")),
+                                               name=name, tool_id=block.get("id")))
                 raw = message.get("usage")
                 if isinstance(raw, dict):
                     # a message split over several lines repeats its usage; count it once
@@ -113,6 +149,18 @@ class ClaudeCodeAdapter:
                         total[key] = total.get(key, 0) + value
                 turn.tokens = total
         return turns
+
+    def _result_items(self, obj: dict, message: dict, turn: Turn) -> None:
+        content = message.get("content")
+        for block in content if isinstance(content, list) else ():
+            if isinstance(block, dict) and block.get("type") == "tool_result":
+                body = _result_text(block.get("content"))
+                turn.items.append(Item("tool_result", body[:RESULT_LIMIT],
+                                       tool_id=block.get("tool_use_id"), size=len(body),
+                                       truncated=len(body) > RESULT_LIMIT))
+        result = obj.get("toolUseResult")
+        if isinstance(result, dict) and isinstance(result.get("agentId"), str):
+            turn.items.append(Item("subagent", agent_id=result["agentId"]))
 
     def _subagents(self, path: Path, objs: Iterable[dict]) -> list[SubagentRef]:
         ids: list[str] = []

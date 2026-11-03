@@ -1,6 +1,6 @@
 import json
 
-from cli_support import add_session, checkpoint, run_json, world  # noqa: F401
+from cli_support import add_session, checkpoint, run_json, spawned, world  # noqa: F401
 from conftest import run_git
 
 from wscontext.capture.state import active_path, update_json, worktree_key

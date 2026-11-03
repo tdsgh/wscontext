@@ -81,6 +81,12 @@ def fit(blocks: list[Block], budget: int | None) -> tuple[list[Block], int]:
     return kept, len(blocks) - len(kept)
 
 
+def block_budget(command: str) -> int:
+    """Tokens left for result blocks once the frame and the reserved note lines are paid."""
+    frame = estimate_tokens(HEADER.format(command=command) + FOOTER) + RESERVED_TOKENS
+    return DEFAULT_BUDGET_TOKENS - frame
+
+
 def render(command: str, blocks: list[Block], *, full: bool, as_json: bool,
            omitted: int = 0, hint: str = "", note: str = "",
            meta: dict | None = None) -> str:
@@ -89,8 +95,7 @@ def render(command: str, blocks: list[Block], *, full: bool, as_json: bool,
     `omitted` counts results already dropped by `--limit`; `hint` says how to see more of them.
     `note` is always shown, e.g. where the next page is.
     """
-    frame = estimate_tokens(HEADER.format(command=command) + FOOTER) + RESERVED_TOKENS
-    kept, over = fit(blocks, None if full else DEFAULT_BUDGET_TOKENS - frame)
+    kept, over = fit(blocks, None if full else block_budget(command))
     left = omitted + over
     if as_json:
         return json.dumps({"command": command, **(meta or {}),

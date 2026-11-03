@@ -2,7 +2,7 @@ import json
 import subprocess
 import sys
 
-from cli_support import world  # noqa: F401
+from cli_support import spawned, world  # noqa: F401
 
 from wscontext.cli import main as ctx_main
 from wscontext.cli.main import main
@@ -117,3 +117,61 @@ def test_why_output_stays_within_the_budget(world, capsys):
     assert estimate_tokens(full) > DEFAULT_BUDGET_TOKENS and full.count("[commit ") == 40
     _, out, _ = world.ctx(capsys, "sessions", "--limit", "500")
     assert estimate_tokens(out) <= DEFAULT_BUDGET_TOKENS
+
+
+def _set_remote(world):
+    (world.repo / ".wscontext").mkdir(exist_ok=True)
+    (world.repo / ".wscontext" / "config.toml").write_text('[sync]\nremote = "origin"\n')
+
+
+def test_read_commands_do_not_fetch_without_a_remote(world, capsys, spawned):
+    for argv in (["why", "src/app.py:1"], ["sessions"], ["show", "sess-one"]):
+        world.ctx(capsys, *argv)
+    assert spawned == []
+
+
+def test_read_commands_start_the_fetch_worker_when_a_remote_is_set(world, capsys, spawned):
+    _set_remote(world)
+    for argv in (["why", "src/app.py:1"], ["sessions"], ["show", "sess-one"]):
+        spawned.clear()
+        code, _, _ = world.ctx(capsys, *argv)
+        assert code == 0
+        assert spawned == [["fetch", "ctx", "", str(world.store.root)]]
+
+
+def test_internal_commands_never_start_a_fetch(world, monkeypatch, spawned):
+    from wscontext.capture import dispatch
+    from wscontext.githooks import dispatch as githooks
+    _set_remote(world)
+    monkeypatch.setattr(dispatch, "main", lambda argv: 0)
+    monkeypatch.setattr(githooks, "main", lambda argv: 0)
+    assert main(["hook", "Stop"]) == 0
+    assert main(["git-hook", "pre-push", "origin", "url"]) == 0
+    assert spawned == []
+
+
+def test_a_read_command_does_not_wait_for_the_fetch(world, capsys, spawned, monkeypatch):
+    import time
+
+    from wscontext.capture import worker
+    _set_remote(world)
+    sleepers = []
+
+    def spawn_a_slow_process(args, cwd, module="wscontext.capture.worker"):
+        sleepers.append(worker.subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)"], cwd=cwd,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            **worker.detach_kwargs(sys.platform)))
+
+    monkeypatch.setattr(worker, "spawn_worker", spawn_a_slow_process)
+    try:
+        started = time.monotonic()
+        code, out, _ = world.ctx(capsys, "sessions")
+        elapsed = time.monotonic() - started
+        assert code == 0 and "sess-one" in out
+        assert len(sleepers) == 1 and sleepers[0].poll() is None  # still running when we returned
+        assert elapsed < 30
+    finally:
+        for proc in sleepers:
+            proc.kill()
+            proc.wait()

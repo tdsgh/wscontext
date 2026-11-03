@@ -58,3 +58,46 @@ def test_missing_version_is_unsupported():
 def test_empty_file(tmp_path):
     (tmp_path / "e.jsonl").write_bytes(b"")
     assert not adapter.parse(tmp_path / "e.jsonl").supported
+
+
+def test_turn_items_in_order():
+    p = adapter.parse(FIX / "full.jsonl")
+    assert p.supported and len(p.turns) == 1
+    items = p.turns[0].items
+    assert [i.kind for i in items] == [
+        "prompt", "text", "tool_call", "tool_result", "tool_call", "tool_call",
+        "tool_result", "tool_result", "subagent", "text"]
+    assert items[0].text == "first line of a long prompt\nsecond line"
+    assert p.turns[0].prompt == items[0].text
+    assert items[1].text == "On it."
+    assert (items[2].name, items[2].tool_id, items[2].text) == (
+        "Bash", "t1", "command=ls -la, description=list")
+    assert (items[3].tool_id, items[3].text, items[3].truncated) == ("t1", "a.py\nb.py", False)
+    assert items[5].name == "Task"
+    assert items[8].agent_id == "sub1"
+    assert items[9].text == "Done."
+    assert "sidechain words" not in [i.text for i in items]
+
+
+def test_long_prompt_item_is_full_while_preview_is_short(tmp_path):
+    long = "x" * 500
+    line = ('{"type":"user","version":"2.1.314","message":{"role":"user","content":"%s"}}' % long)
+    (tmp_path / "l.jsonl").write_text(line + "\n")
+    t = adapter.parse(tmp_path / "l.jsonl").turns[0]
+    assert len(t.prompt) == 200 and t.items[0].text == long
+
+
+def test_huge_tool_result_is_truncated_with_original_size():
+    items = adapter.parse(FIX / "full.jsonl").turns[0].items
+    big = items[6]
+    assert big.truncated and big.size == 3000 and len(big.text) == 2000
+
+
+def test_tool_input_value_is_shortened():
+    items = adapter.parse(FIX / "full.jsonl").turns[0].items
+    assert items[5].text == "description=explore, prompt=look around"
+
+
+def test_unsupported_version_has_no_items():
+    p = adapter.parse(FIX / "unknown_version.jsonl")
+    assert p.turns == []

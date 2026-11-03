@@ -18,6 +18,8 @@ COMMANDS = {
     "show": "wscontext.cli.show",
     "forget": "wscontext.cli.forget",
 }
+# Read commands that start the throttled background fetch when a sync remote is set (ADR-008).
+FETCHING = {"why", "sessions", "show"}
 INTERNAL = {"hook", "worker", "git-hook"}
 # Options before the command name: the launcher's (ignored), then the shared ones (kept).
 LAUNCHER_OPTIONS = {"--plugin-root", "--plugin-data"}
@@ -55,6 +57,15 @@ def _log_call(store, config, argv: list[str], code: int, started: float, out: st
             "ts": now_iso(), "source": "cli", "cwd": str(Path.cwd()), "argv": argv, "exit": code,
             "ms": round((time.monotonic() - started) * 1000),
             "output_bytes": len(out.encode("utf-8"))})
+    except OSError:
+        pass
+
+
+def _start_fetch(store) -> None:
+    """Detached and unawaited; the worker applies the fetch throttle."""
+    from wscontext.capture import worker
+    try:
+        worker.spawn_worker(["fetch", "ctx", "", str(store.root)], store.root)
     except OSError:
         pass
 
@@ -100,6 +111,8 @@ def main(argv: list[str] | None = None) -> int:
         store = None
     else:
         config = load_config(store.root)
+        if name in FETCHING and config.sync.remote:
+            _start_fetch(store)
         reply = module.run(args, store, config)
     # Errors go to stderr, except as JSON, which a caller parses from stdout.
     print(reply.text, file=sys.stderr if reply.code and not args.json else sys.stdout)

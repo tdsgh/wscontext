@@ -1,9 +1,10 @@
 """What the read commands share: session lookup, transcript turns and `--since` values."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
+from wscontext.adapters.base import Item
 from wscontext.adapters.claude_code import ClaudeCodeAdapter
 from wscontext.store.paths import StorePaths, is_safe_name
 from wscontext.store.records import RecordError, SessionRecord, read_session
@@ -19,6 +20,7 @@ class TurnView:
     prompt: str | None  # None when the transcript was not captured or its format is unknown
     tool_calls: dict[str, int]
     tokens: dict[str, int] | None
+    items: list[Item] = field(default_factory=list)  # full content; empty without a transcript
 
 
 def parse_time(value: str | None) -> datetime | None:
@@ -79,7 +81,7 @@ def transcript_turns(store: StorePaths, record: SessionRecord) -> list[TurnView]
     if raw:
         parsed = ClaudeCodeAdapter().parse(raw[0])
         if parsed.supported and parsed.turns:
-            return [TurnView(t.index, t.started_at, t.prompt, t.tool_calls, t.tokens)
+            return [TurnView(t.index, t.started_at, t.prompt, t.tool_calls, t.tokens, t.items)
                     for t in parsed.turns]
     return [TurnView(t.index, t.started_at or None, None, t.tool_calls, t.tokens)
             for t in record.turns]

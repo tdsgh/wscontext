@@ -1,6 +1,6 @@
 import json
 
-from cli_support import add_session, checkpoint, commit, run_json, world  # noqa: F401
+from cli_support import add_session, checkpoint, commit, run_json, spawned, world  # noqa: F401
 from conftest import run_git
 
 from wscontext.cli.why import parse_target, resolve_symbol
