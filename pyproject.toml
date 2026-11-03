@@ -9,7 +9,10 @@ dependencies = []
 ctx = "wscontext.cli.main:main"
 
 [dependency-groups]
-dev = ["pytest"]
+dev = [
+    "pytest",
+    "pytest-xdist>=3.8.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -21,3 +24,4 @@ packages = ["src/wscontext"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+addopts = "-n auto --dist load"

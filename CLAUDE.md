@@ -53,6 +53,18 @@ it instead of restating them — `→ ADR-0NN` refers to
 - No POSIX-only calls in application code; shell stays in one-line launcher and
   Git-hook shims (→ ADR-020).
 
+## Test gates
+
+- Run the full suite once at a build-plan `test` gate.
+- When a step changes timing-sensitive code — locks, concurrent writers,
+  history merge or compare-and-swap, detached workers, hooks under a time
+  budget, retries — also run the changed and affected test files 5 more times
+  and name the reason in the gate report.
+- A test that fails and then passes on a rerun makes the gate red. Investigate
+  it as a flake.
+- An agent runs its own layer's tests while working and the full suite once
+  before reporting.
+
 ## Command index
 
 | I want to... | See |
