@@ -1,0 +1,12 @@
+[redaction]
+extra_patterns = []
+
+[retention]
+raw_days = 180
+
+[sync]
+# remote is unset by default: nothing is pushed
+fetch_throttle_seconds = 300
+
+[hooks]
+time_budget_ms = 2000
