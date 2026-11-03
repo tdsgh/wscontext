@@ -150,8 +150,13 @@ def test_union_merge_of_two_clones(shared_remote):
     assert _parents(b, merged) == [b_tip, a_tip]
     assert _tree(b, merged) == {"records/sessions/s-a.json", "records/sessions/s-b.json"}
     assert read_tip(sb) == b_tip  # union_merge alone moves no ref
-    assert merge_into_local(sb, a_tip) == merged
-    assert read_tip(sb) == merged
+    # merge_into_local makes its own merge commit: same parents and tree, but the commit
+    # timestamp (whole seconds) may differ from the one above, so the SHA may too.
+    landed = merge_into_local(sb, a_tip)
+    assert read_tip(sb) == landed
+    assert _parents(b, landed) == [b_tip, a_tip]
+    tree = run_git(b, "rev-parse", f"{merged}^{{tree}}")
+    assert run_git(b, "rev-parse", f"{landed}^{{tree}}") == tree
 
 
 def test_conflict_keeps_the_larger_blob_and_logs(shared_remote, caplog):

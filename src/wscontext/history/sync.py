@@ -4,6 +4,7 @@ Nothing here runs unless `[sync] remote` is set. Pushes happen only when a
 caller asks; nothing in this module pushes on its own.
 """
 
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from wscontext.config import Config
 from wscontext.gitutil import GitError, git, git_bytes
 from wscontext.history.branch import (HISTORY_REF, local_path, ls_blobs,
                                       merge_into_local, read_tip)
+from wscontext.redact.redactor import redact_bytes
 from wscontext.store.paths import StorePaths
 from wscontext.store.records import atomic_write
 
@@ -59,7 +61,7 @@ def fetch(store: StorePaths, config: Config, force: bool = False) -> bool:
     before = read_tip(store)
     if merge_into_local(store, theirs) == before:
         return False
-    materialize(store)
+    materialize(store, config)
     return True
 
 
@@ -130,25 +132,34 @@ def pending(store: StorePaths, config: Config) -> list[str]:
     return sorted(out)
 
 
-def materialize(store: StorePaths) -> int:
-    """Write branch files into `raw/` and `records/` where the local copy is missing or smaller.
+def materialize(store: StorePaths, config: Config) -> int:
+    """Copy branch files into `raw/` and `records/`, redacted with the local rules.
 
-    Returns the number of files written.
+    Each blob is considered once: `state/materialized.json` maps branch paths to the
+    blob last considered, and only a new blob or a missing local file is looked at
+    again. A considered blob is written when the local file is missing or shorter
+    than the redacted blob; a local copy at least as long is this host's own,
+    newer capture or already current. Returns the number of files written.
     """
     tip = read_tip(store)
     if tip is None:
         return 0
+    seen_file = store.state / "materialized.json"
+    try:
+        seen = json.loads(seen_file.read_bytes())
+    except (OSError, ValueError):
+        seen = {}
+    if not isinstance(seen, dict):
+        seen = {}
+    current: dict[str, str] = {}
     wanted: list[tuple[Path, str, int]] = []
     for path, (_, sha, size) in ls_blobs(store, tip).items():
         target = local_path(store, path)
         if target is None:
             log.warning("history path not materialized: %s", path)
             continue
-        try:
-            have = target.stat().st_size
-        except FileNotFoundError:
-            have = -1
-        if have < size:
+        current[path] = sha
+        if seen.get(path) != sha or not target.exists():
             wanted.append((target, sha, size))
     # Blobs are read in bounded batches so a fresh clone never holds all history in memory.
     batches: list[list[tuple[Path, str, int]]] = [[]]
@@ -159,6 +170,7 @@ def materialize(store: StorePaths) -> int:
             total = 0
         batches[-1].append(item)
         total += item[2]
+    written = 0
     for batch in batches:
         if not batch:
             continue
@@ -169,6 +181,18 @@ def materialize(store: StorePaths) -> int:
             header_end = out.index(b"\n", pos)
             size = int(out[pos:header_end].split()[2])
             start = header_end + 1
-            atomic_write(target, out[start:start + size])
+            data, hits = redact_bytes(out[start:start + size], config)
             pos = start + size + 1
-    return len(wanted)
+            if hits:
+                log.warning("local rules redacted shared history %s: %s", target.name,
+                            ", ".join(sorted(set(hits))))
+            try:
+                have = target.stat().st_size
+            except FileNotFoundError:
+                have = -1
+            if len(data) > have:
+                atomic_write(target, data)
+                written += 1
+    if current != seen:
+        atomic_write(seen_file, json.dumps(current, sort_keys=True).encode() + b"\n")
+    return written
