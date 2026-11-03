@@ -66,14 +66,28 @@ def test_detach_kwargs_per_platform():
     assert detach_kwargs("win32") == {"creationflags": 0x00000008 | 0x00000200}
 
 
-def test_hook_path_imports_only_stdlib():
+def test_hook_path_imports_only_stdlib(tmp_path):
     code = ("import sys\nbefore = set(sys.modules)\n"
             "import wscontext.capture.dispatch, wscontext.capture.worker, "
-            "wscontext.history.sync, wscontext.redact.redactor, wscontext.logs\n"
+            "wscontext.history.sync, wscontext.redact.redactor, wscontext.logs, "
+            "wscontext.cli.main, wscontext.githooks.dispatch\n"
             "new = {m.split('.')[0] for m in set(sys.modules) - before}\n"
             "print(sorted(new - set(sys.stdlib_module_names) - {'wscontext'}))")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "[]", out.stdout
+    # `ctx hook` and `ctx git-hook` through the entry point, from a directory that is no repository.
+    for argv in (["hook", "Stop"], ["git-hook", "post-checkout"], ["worker", "copy"]):
+        run = ("import io, sys\nsys.stdin = io.StringIO('')\n"
+               "before = set(sys.modules)\n"
+               "from wscontext.cli.main import main\n"
+               f"assert main({argv!r}) == 0\n"
+               "new = set(sys.modules) - before\n"
+               "third = {m.split('.')[0] for m in new} - set(sys.stdlib_module_names) - {'wscontext'}\n"
+               "cli = sorted(m for m in new if m.startswith('wscontext.cli.') and m != 'wscontext.cli.main')\n"
+               "print(sorted(third), cli)")
+        done = subprocess.run([sys.executable, "-c", run], capture_output=True, text=True,
+                              cwd=tmp_path, check=True)
+        assert done.stdout.strip() == "[] []", (argv, done.stdout, done.stderr)
 
 
 def test_real_subprocess_hook_spawns_detached_worker(git_repo, transcript, tmp_path):

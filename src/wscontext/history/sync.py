@@ -196,3 +196,14 @@ def materialize(store: StorePaths, config: Config) -> int:
     if current != seen:
         atomic_write(seen_file, json.dumps(current, sort_keys=True).encode() + b"\n")
     return written
+
+
+def shared_tips(store: StorePaths) -> list[str]:
+    """Tips of every remote-tracking history ref, as of the last fetch or push."""
+    return git("for-each-ref", "--format=%(objectname)", "refs/remotes/*/wscontext/history",
+               cwd=store.root).split()
+
+
+def shared_paths(store: StorePaths) -> set[str]:
+    """Branch paths present on any remote-tracking history ref."""
+    return {path for tip in shared_tips(store) for path in ls_blobs(store, tip)}

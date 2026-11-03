@@ -148,6 +148,31 @@ def remove_paths(store: StorePaths, paths: list[Path],
     return _apply(store, {branch_path(store, p): None for p in paths}, message)
 
 
+def squash_unshared(store: StorePaths, shared: list[str],
+                    message: str = "wscontext: forget") -> str | None:
+    """Replace every commit not yet on a remote with one commit holding the current tree.
+
+    The new commit's parents are the `shared` tips the local tip contains, so nothing a
+    remote already has changes, and blobs that only earlier local commits held are no
+    longer reachable from the branch. Returns the new tip.
+    """
+    for attempt in range(CAS_ATTEMPTS):
+        tip = read_tip(store)
+        if tip is None:
+            return None
+        parents = [t for t in dict.fromkeys(shared) if _is_ancestor(store, t, tip)]
+        parents = [p for p in parents
+                   if not any(q != p and _is_ancestor(store, p, q) for q in parents)]
+        if parents == [tip]:
+            return tip
+        tree = git("rev-parse", f"{tip}^{{tree}}", cwd=store.root).strip()
+        new = _commit(store, tree, parents, message)
+        if cas_update(store, new, tip, message):
+            return new
+        time.sleep(random.uniform(0, 0.005 * (attempt + 1)))
+    raise GitError(("update-ref", HISTORY_REF), 1, "compare-and-swap kept failing")
+
+
 def _is_ancestor(store: StorePaths, a: str, b: str) -> bool:
     try:
         git("merge-base", "--is-ancestor", a, b, cwd=store.root)
