@@ -261,5 +261,5 @@ its own work package and the strongest model.
 
 Tests need recorded hook inputs and sample transcripts as fixtures, and
 throwaway local Git repositories for linking and sharing; none of this needs the
-network. The Windows run of the offline suite needs a CI runner, which is a
-decision to take when the first test lands.
+network. Tests run on macOS only in this stage; Windows readiness is checked
+by inspection of the code, and the first Windows run happens in Finalize.

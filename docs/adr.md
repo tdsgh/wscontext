@@ -292,3 +292,24 @@ Git-hook shims, shipped in both `sh` and `.cmd` form.
 **Guardrail.** No POSIX-only calls (`fork`, `fcntl`, `setsid`) in application code.
 
 **Reasoning.** [design-rationale.md § Why portable from stage 1](design-rationale.md#why-portable-from-stage-1)
+
+Superseded by ADR-021 for the Windows CI implication; the rest stands.
+
+### ADR-021 — Tests run on macOS only until Finalize; portability is held by a guard test
+
+**Decision.** Stages 1 to 4 run the offline suite on macOS only, with no CI. A
+portability guard test and platform branches written as pure functions keep
+Windows support honest; the first Windows run is on a Windows VM in the
+Finalize stage.
+
+**Implications.**
+- A test scans application code for POSIX-only modules and calls and fails the
+  suite when one appears.
+- Each platform-specific behaviour (detach flags, launcher path, hook shim
+  text) is a pure function of the platform, tested for both `win32` and POSIX
+  on macOS.
+- Windows-only defects can surface late, in Finalize.
+- CI is added only when a runner exists; the Gitea Actions runner can run on
+  the macOS host.
+
+**Reasoning.** [design-rationale.md § Why portable from stage 1](design-rationale.md#why-portable-from-stage-1)

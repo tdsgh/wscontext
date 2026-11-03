@@ -77,7 +77,8 @@ embeddings, hybrid ranking.
   guidance).
 - A performance check of hook latency against the budget, from
   `ctx stats hooks`, on a large repository.
-- A Windows click-through: install → session → commit → `ctx why` →
+- A Windows 11 VM (UTM or Parallels on Apple Silicon): run the offline suite,
+  then click through install → session → commit → `ctx why` →
   `ctx stats`.
 - **Optional:** a VS Code extension that shows the session behind a line on
   hover.

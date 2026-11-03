@@ -135,5 +135,7 @@ runs.
 Locks, detached workers, launchers and path handling are the parts that differ
 by platform. Writing them portably from the start costs little; retrofitting
 them after three stages means reworking every component that took a POSIX-only
-shortcut. Verifying on a real Windows machine is deferred to the Finalize
-stage, while the offline suite runs on Windows CI throughout.
+shortcut. Development happens on macOS with no Windows machine or runner, so
+a guard test and platform branches as pure functions catch most portability
+regressions on macOS; running on real Windows waits for a VM in the Finalize
+stage.
