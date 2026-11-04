@@ -41,6 +41,9 @@ start, the `ctx` skill and CLAUDE.md triggers for search.
 
 - **Monitoring added:** index size and lag; adoption (sessions with a `ctx`
   call, `ctx` before the first search or read).
+- **Store size:** the transcript copy drops Claude Code's bookkeeping entries;
+  decide whether the history branch moves outside `refs/heads/` so a plain
+  clone does not fetch it (would change ADR-007, ADR-008).
 - **Eval set:** 20 questions about past work, each with the expected session or
   commit, kept in the repository and run by a `ctx` eval command.
 - **New agent:** `py-index`.

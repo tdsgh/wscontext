@@ -186,3 +186,9 @@ and their gates are in [roadmap.md](roadmap.md).
 - `.claude-plugin/plugin.json` has no author field; plugin validation warns.
 - Hooks keep firing in sessions that were already running when the plugin is
   uninstalled.
+- Nothing bounds the store's size. Raw transcripts are kept in full;
+  `retention.raw_days` is not enforced (pruning is stage 5); Claude Code's own
+  bookkeeping entries (system-prompt snapshots, API request records, skill and
+  tool listings) are a large share of a short session. With sync on,
+  `wscontext/history` is a branch under `refs/heads/`, so a plain clone of the
+  sync remote downloads all shared history (→ ADR-007).
