@@ -5,9 +5,10 @@ it improves development, and how it affects Claude Code. The system itself is
 described in [architecture.md](architecture.md); decisions are in
 [adr.md](adr.md).
 
-Nothing is built yet. Everything below describes the designed plugin. The
-effects on quality, speed and cost are expected outcomes that each stage has to
-prove at its gate ([roadmap.md](roadmap.md)), not measured results.
+Stage 1 is built; stages 2 to 4 are designed. Everything below marked stage 2
+or later describes the designed plugin. The effects on quality, speed and cost
+are expected outcomes that each stage has to prove at its gate
+([roadmap.md](roadmap.md)), not measured results.
 
 ## What a developer can do with it
 

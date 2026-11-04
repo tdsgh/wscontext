@@ -54,10 +54,10 @@ read statistics on all of it.
   configured — with the fix for each failure.
 
 **The operator can change:**
-- Enable the plugin for themselves or for the whole team through committed
-  project settings.
+- Enable the plugin for themselves or for the whole team by adding the plugin
+  to the committed project settings by hand; wscontext never edits them.
 - Initialize a repository: install Git hooks without replacing existing ones,
-  create the committed settings file, and add a short CLAUDE.md block.
+  create the committed configuration file, and add a short CLAUDE.md block.
 - Uninstall from a repository: remove hooks and the CLAUDE.md block while
   keeping captured data.
 
@@ -77,7 +77,7 @@ commit succeeds as before.
 - The redacted transcript of any captured session.
 
 **The operator can change:**
-- Add redaction rules for project-specific secrets in the committed settings.
+- Add redaction rules for project-specific secrets in the committed configuration.
 - Set how long raw transcripts are kept; session and commit records are kept
   regardless.
 
@@ -128,7 +128,8 @@ Amended and rebased commits keep their link.
 
 **The operator can see:**
 - A list of sessions filtered by branch, author, date or file.
-- Any session in full, page by page.
+- Any session in full — prompts, replies, tool calls and results — page by
+  page, or as one preview per turn; any subagent's transcript on its own.
 - Which sessions would be sent on the next share.
 
 **The operator can change:**
@@ -220,15 +221,21 @@ can be compared against a baseline.
 ## 13. Open questions
 
 1. Does context compaction remove entries from the transcript file? If not, the
-   pre-compaction snapshot is unnecessary.
+   pre-compaction snapshot is unnecessary. Open. The snapshot stays on by
+   default.
 2. Which "active session" applies when a commit is made long after the last
-   prompt — how stale may a session be and still be linked?
+   prompt — how stale may a session be and still be linked? Answered
+   provisionally: 120 minutes since the session's last activity; adjustable in
+   the configuration. Revisit after the two-week gate.
 3. When the Git host squash-merges a pull request, are the session trailers
    kept? If not, should the squash commit be linked from the merged commits?
+   Open.
 4. How does Claude Code on Windows run plugin hook commands and plugin
-   executables — through Git Bash, or directly?
+   executables — through Git Bash, or directly? Open. Not run on Windows
+   before Finalize.
 5. Should commits made from a worktree with several active sessions link all of
-   them, or only the most recent?
+   them, or only the most recent? Answered: all active sessions in the window
+   are linked, one trailer each.
 
 ## 14. Beyond stage 1
 
@@ -244,8 +251,8 @@ can be compared against a baseline.
 
 ## 15. Notes for implementation planning
 
-Nothing exists yet beyond the kit scaffolding: no package, no tests, no plugin
-files. The architecture and the recorded decisions fix the store layout, the
+Built in stage 1: the package, tests and plugin files; see the build plan's
+closing notes. The architecture and the recorded decisions fix the store layout, the
 single command-line tool, the plugin packaging and opt-in sharing, so the build
 plan needs to decide mechanisms, not direction.
 

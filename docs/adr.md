@@ -53,6 +53,8 @@ session; `post-commit` writes a checkpoint record keyed by the commit SHA.
 - Amend, rebase and cherry-pick keep the trailer; the old checkpoint stays and
   a new one is added for the new SHA.
 
+Superseded by ADR-025 for the hooks that add the trailer; the rest stands.
+
 ### ADR-004 — The runtime store lives under the Git common dir; only config and decisions live in the working tree
 
 **Decision.** Raw data, records, indexes, state and logs live in
@@ -254,6 +256,8 @@ not a second development venv.
 
 **Reasoning.** [design-rationale.md § Why a plugin](design-rationale.md#why-a-plugin)
 
+Superseded by ADR-023 for the launcher re-sync and Git-hook launcher implications; the rest stands.
+
 ### ADR-018 — Monitoring is a CLI report
 
 **Decision.** Statistics are shown by `ctx stats` and its views (`data`,
@@ -295,6 +299,8 @@ Git-hook shims, shipped in both `sh` and `.cmd` form.
 
 Superseded by ADR-021 for the Windows CI implication; the rest stands.
 
+Superseded by ADR-022 for the shell-limits decision; the rest stands.
+
 ### ADR-021 — Tests run on macOS only until Finalize; portability is held by a guard test
 
 **Decision.** Stages 1 to 4 run the offline suite on macOS only, with no CI. A
@@ -313,3 +319,101 @@ Finalize stage.
   the macOS host.
 
 **Reasoning.** [design-rationale.md § Why portable from stage 1](design-rationale.md#why-portable-from-stage-1)
+
+### ADR-022 — Shell is limited to the plugin launchers and the Git-hook shims
+
+**Decision.** All logic is in Python. Shell is limited to the plugin launcher
+(`bin/ctx` in POSIX `sh`, `bin/ctx.cmd`), the stable launcher `ctx init` writes,
+and the Git-hook shims, which are `sh` on every platform.
+
+**Implications.**
+- The launcher is a short script, not a one-liner: it keeps the uv environment,
+  takes a `mkdir` build lock, and execs `ctx` (bin/ctx:5-19).
+- For `hook` and `git-hook` calls it never waits for a build and exits 0 when
+  `uv` or the environment is missing (bin/ctx:13-16).
+- Git-hook shims have no `.cmd` form: Git runs hook files through `sh`, Git for
+  Windows included (src/wscontext/githooks/install.py:1-4).
+- `bin/ctx.cmd` is not exercised before Finalize (bin/ctx.cmd:2; → ADR-021).
+
+**Guardrail.** No logic moves into a launcher or shim.
+
+### ADR-023 — Git hooks call a stable launcher in the data directory; the plugin environment is rebuilt from a stamp
+
+**Decision.** `ctx init` writes `<data>/bin/ctx`, and every Git-hook shim embeds
+that path. It forwards to the plugin launcher under the root recorded in
+`<data>/plugin-root`, which every plugin launcher run refreshes. The launcher
+rebuilds `<data>/venv` when the stamp in `<data>/venv/.lock-hash` (plugin root,
+`cksum` of `uv.lock`, `cksum` of `.claude-plugin/plugin.json`) differs.
+
+**Implications.**
+- Git hooks survive plugin updates without re-running `ctx init`
+  (src/wscontext/cli/init.py:1-6, 34-49).
+- The rebuild is `uv sync --frozen --no-dev --no-editable --reinstall-package wscontext`
+  (bin/ctx:7). The installed package is a copy of the plugin sources, refreshed
+  when `plugin.json` or the plugin root changes.
+- The data directory comes from `--plugin-data`. Without it (a Bash-tool call)
+  the launcher uses `~/.claude/plugins/data/wscontext-wscontext`, which holds
+  only while marketplace and plugin are both named `wscontext` (bin/ctx:5).
+- `ctx doctor` flags a shim that points into `plugins/cache/`, is not
+  executable, is not the stable launcher, or records a root that is gone
+  (src/wscontext/cli/doctor.py:71-86).
+
+**Guardrail.** A shim never points into the versioned plugin cache.
+
+### ADR-024 — wscontext never edits Claude Code settings; team rollout is manual
+
+**Decision.** Neither the plugin install nor `ctx init` writes to
+`.claude/settings.json`. The `init` skill tells the operator to add
+`enabledPlugins` and `extraKnownMarketplaces` to the committed file by hand
+(skills/init/SKILL.md:15-20).
+
+**Implications.**
+- A teammate gets the plugin once that entry is committed. Each teammate still
+  runs `ctx init` in their clone.
+- No code path under `src/` references a settings file.
+
+### ADR-025 — The `AI-Session` trailer is added by `prepare-commit-msg` and `commit-msg`
+
+**Decision.** Both hooks run the same handler. It adds one trailer per active
+session in the worktree, and does nothing during a rebase or `git am`.
+`prepare-commit-msg` also skips an empty message. The editor flow is linked by
+`commit-msg`, once the message has text.
+
+**Implications.**
+- Replayed commits keep their original trailers and get no new ones
+  (src/wscontext/githooks/handlers.py:92-106; HANDLERS at :143-144).
+- The checkpoint stays in `post-commit` and `post-rewrite` (→ ADR-003).
+
+**Guardrail.** `commit-msg` is not redundant: Git would commit a trailer-only
+message after an aborted editor.
+
+### ADR-026 — `ctx forget` squashes history-branch commits not yet pushed
+
+**Decision.** Forgetting a session that is not on a remote removes its files
+from the branch, then replaces every unpushed history commit with one commit
+holding the current tree.
+
+**Implications.**
+- Blobs held only by earlier local commits become unreachable, so a later push
+  cannot send them (src/wscontext/cli/forget.py:110-115;
+  src/wscontext/history/branch.py:151-173).
+- A session already on a remote is refused (src/wscontext/cli/forget.py:60-67; → ADR-007).
+- Logs are not edited. Their lines are redacted at write (→ ADR-006).
+
+### ADR-027 — `hook`, `worker` and `git-hook` are internal commands on a stdlib-only path
+
+**Decision.** `ctx hook <event>`, `ctx worker …` and `ctx git-hook <hook>` sit
+beside the user-facing commands. They load neither argparse nor the store
+commands.
+
+**Implications.**
+- Shims and `hooks.json` call them. They are not part of the documented
+  surface (src/wscontext/cli/main.py:1-4, 27, 98-99; → ADR-011, ADR-016).
+
+### ADR-028 — The test suite runs in parallel with pytest-xdist
+
+**Decision.** `pytest-xdist` is a dev dependency, and `addopts` is
+`-n auto --dist load` (pyproject.toml:14-16, 29).
+
+**Implications.**
+- The suite and the timing-sensitive repeat rule are in root `CLAUDE.md` § Test gates.

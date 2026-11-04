@@ -3,7 +3,8 @@
 
 A local harness for Claude Code that captures agent sessions, links them to Git
 commits, indexes them alongside a code graph, and gives the agent one search
-tool (`ctx`) over both. Design stage, no code yet.
+tool (`ctx`) over both. Stage 1 (capture and trace) is built; stages 2 to 5 are
+designed.
 The system itself is described in
 [docs/architecture.md](docs/architecture.md).
 
@@ -25,11 +26,11 @@ names.
 | Subtrees | none yet |
 | Python version | `3.13` |
 | Venv | `.venv` |
-| Config loader | `wscontext.config.load_config()` (planned, stage 1 WP1) |
+| Config loader | `wscontext.config.load_config()` |
 | Config file | `.wscontext/config.toml` |
 | Secret field type | `SecretStr` |
 | Test paths | `tests/` |
-| Test fakes | TODO(kit): shared fakes and helpers, none yet |
+| Test fakes | `tests/conftest.py` (`git_repo`, `shared_remote`, `run_git`, `put_store_file`, `branch_blob`, `set_identity`); `tests/cli/cli_support.py`, `tests/capture/support.py`, `tests/githooks/githook_support.py`; recorded inputs in `tests/fixtures/` |
 
 ## Non-negotiable rules
 
@@ -50,8 +51,8 @@ it instead of restating them — `→ ADR-0NN` refers to
 - Read Claude Code transcripts only through an adapter (→ ADR-002).
 - Push the history branch only from the `pre-push` hook and `ctx sync`
   (→ ADR-008).
-- No POSIX-only calls in application code; shell stays in one-line launcher and
-  Git-hook shims (→ ADR-020).
+- No POSIX-only calls in application code; shell stays in the plugin launchers
+  (`bin/ctx`, `bin/ctx.cmd`) and the Git-hook shims (→ ADR-020, ADR-022).
 
 ## Test gates
 
@@ -72,6 +73,8 @@ it instead of restating them — `→ ADR-0NN` refers to
 | Understand the system as a whole | [docs/architecture.md](docs/architecture.md) |
 | Understand what wscontext does for a developer | [docs/what-wscontext-does.md](docs/what-wscontext-does.md) |
 | Check what's already been decided | [docs/adr.md](docs/adr.md) |
+| Run the tests | `.venv/bin/pytest`; gates in [Test gates](#test-gates) |
+| Install the plugin locally | [README.md](README.md) § Install |
 | Understand why a decision was taken | [docs/design-rationale.md](docs/design-rationale.md) |
 | See the stages and how to run one | [docs/roadmap.md](docs/roadmap.md) |
 | Read the current stage's requirements | [docs/wscontext-phase-1.md](docs/wscontext-phase-1.md) |
