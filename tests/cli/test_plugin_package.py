@@ -68,6 +68,8 @@ def launcher(tmp_path: Path, monkeypatch):
     (root / "bin").mkdir(parents=True)
     shutil.copy(ROOT / "bin" / "ctx", root / "bin" / "ctx")
     shutil.copy(ROOT / "uv.lock", root / "uv.lock")
+    (root / ".claude-plugin").mkdir()
+    shutil.copy(ROOT / ".claude-plugin" / "plugin.json", root / ".claude-plugin" / "plugin.json")
     fake = tmp_path / "fakebin"
     fake.mkdir()
     (fake / "uv").write_text(FAKE_UV)
@@ -90,13 +92,17 @@ def test_launcher_builds_once_and_passes_plugin_paths(launcher):
     assert out.returncode == 0, out.stderr
     assert out.stdout == f"venv-ctx --plugin-root {root} --plugin-data {data} why a.py\n"
     sync = log.read_text()
-    assert "sync --frozen --no-dev --no-editable" in sync and f"--project {root}" in sync
+    assert "sync --frozen --no-dev --no-editable" in sync and "--reinstall-package wscontext" in sync and f"--project {root}" in sync
     assert (data / "plugin-root").read_text() == str(root)
     run("--plugin-data", str(data), "why", "a.py")
     assert len(log.read_text().splitlines()) == 1  # same lock file: no second sync
     (root / "uv.lock").write_text((root / "uv.lock").read_text() + "\n# changed\n")
     run("--plugin-data", str(data), "why", "a.py")
     assert len(log.read_text().splitlines()) == 2
+    manifest = root / ".claude-plugin" / "plugin.json"
+    manifest.write_text(manifest.read_text().replace("0.1.0", "0.1.1"))  # a version bump, same folder
+    run("--plugin-data", str(data), "why", "a.py")
+    assert len(log.read_text().splitlines()) == 3
 
 
 @SH_ONLY
