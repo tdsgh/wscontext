@@ -17,7 +17,7 @@ Each stage can be used on its own. Stop as soon as the value stops growing.
 4. **Gate.** Run the stage's acceptance scenarios and any eval set
    (§ Gates and milestones). Record the result in the build plan's closing
    notes.
-5. **Record.** Update `architecture.md` (move the stage out of § Not built yet)
+5. **Record.** Update `architecture.md` (mark the stage built in § Stages)
    and append ADR entries for decisions taken during the build.
 6. **Archive.** When stage N+1 starts, `git mv` stage N's two documents into
    `hist/` and fix links (see [CLAUDE.md](CLAUDE.md) § Archiving).
