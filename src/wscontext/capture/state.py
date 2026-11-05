@@ -13,6 +13,8 @@ from wscontext.store.locks import FileLock
 from wscontext.store.paths import StorePaths, is_safe_name
 from wscontext.store.records import write_json
 
+SWEEP_EVERY_SECONDS = 86400
+
 
 def turn_state_path(store: StorePaths, session_id: str) -> Path:
     return store.state / "turns" / f"{session_id}.json"
@@ -74,6 +76,16 @@ def idle_sessions(store: StorePaths, config: Config) -> list[tuple[str, str]]:
             if is_safe_name(sid) and last_activity(store, sid, started) < cutoff:
                 idle.append((key, sid))
     return idle
+
+
+def sweep_due(store: StorePaths, config: Config) -> bool:
+    """Whether to spawn a `sweep`: the last one is over a day old, or a session is idle."""
+    try:
+        if time.time() - float((store.state / "last_sweep").read_text()) < SWEEP_EVERY_SECONDS:
+            return bool(idle_sessions(store, config))
+    except (OSError, ValueError):
+        pass
+    return True
 
 
 def git_value(store: StorePaths, *args: str) -> str | None:

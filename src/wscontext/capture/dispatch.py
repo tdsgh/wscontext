@@ -17,7 +17,9 @@ def run_budgeted(event: str, work: Callable[[dict, dict], None]) -> dict:
     """Run `work(entry, ctx)` to completion or to its time budget; returns the hook-run log entry.
 
     `work` puts `store` and `config` into `ctx` as soon as it knows them, so the
-    configured budget applies and the entry is logged. Never raises.
+    configured budget applies and the entry is logged. It may put hook output into
+    `ctx["output"]`; the entry carries it as `output` only when `work` finished inside the
+    budget. Never raises.
     """
     started = time.monotonic()
     entry: dict = {"ts": now_iso(), "event": event, "ok": True}
@@ -46,6 +48,8 @@ def run_budgeted(event: str, work: Callable[[dict, dict], None]) -> dict:
             append_log(ctx["store"], ctx["config"], HOOKS_LOG, dict(entry))
         except BaseException:
             pass
+    if entry["ok"] and "output" in ctx:
+        entry["output"] = ctx["output"]  # after the log write: the log never holds it
     return entry
 
 
@@ -66,14 +70,19 @@ def run(event: str, raw: str) -> dict:
         store = StorePaths.resolve(Path(payload.get("cwd") or "."))
         ctx["store"] = store
         ctx["config"] = load_config(store.root)
-        handler(store, ctx["config"], payload)
+        out = handler(store, ctx["config"], payload)
+        if isinstance(out, str) and out:
+            ctx["output"] = json.dumps({"hookSpecificOutput": {
+                "hookEventName": "SessionStart", "additionalContext": out}})
 
     return run_budgeted(event, work)
 
 
 def main(argv: list[str]) -> int:
     try:
-        run(argv[0] if argv else "", sys.stdin.read())
+        entry = run(argv[0] if argv else "", sys.stdin.read())
+        if entry.get("output"):
+            sys.stdout.write(entry["output"] + "\n")
     except BaseException:
         pass
     return 0

@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 from wscontext.capture.state import (active_path, git_value, last_activity, parse_time,
-                                     read_json, worktree_key)
+                                     read_json, sweep_due, worktree_key)
 from wscontext.capture.worker import spawn_worker
 from wscontext.config import Config
 from wscontext.gitutil import git
@@ -95,6 +95,9 @@ def post_commit(store: StorePaths, config: Config, args: list[str], stdin: str) 
     for sha, (_, sessions) in commit_links(store, ["HEAD"]).items():
         if sessions:
             spawn(store, "checkpoint", sha)
+    # a commit also finalizes sessions that went idle (§ 7)
+    if sweep_due(store, config):
+        spawn_worker(["sweep", "", "", str(store.root)], store.root)
 
 
 def post_rewrite(store: StorePaths, config: Config, args: list[str], stdin: str) -> None:

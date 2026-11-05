@@ -83,7 +83,8 @@ def test_hook_path_imports_only_stdlib(tmp_path):
                f"assert main({argv!r}) == 0\n"
                "new = set(sys.modules) - before\n"
                "third = {m.split('.')[0] for m in new} - set(sys.stdlib_module_names) - {'wscontext'}\n"
-               "cli = sorted(m for m in new if m.startswith('wscontext.cli.') and m != 'wscontext.cli.main')\n"
+               "# cli.output is the one cli module the hook path reuses (the brief's frame)\n"
+               "cli = sorted(m for m in new if m.startswith('wscontext.cli.') and m not in {'wscontext.cli.main', 'wscontext.cli.output'})\n"
                "print(sorted(third), cli)")
         done = subprocess.run([sys.executable, "-c", run], capture_output=True, text=True,
                               cwd=tmp_path, check=True)

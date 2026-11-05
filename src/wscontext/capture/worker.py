@@ -8,6 +8,7 @@ transcript: it finalizes idle sessions and prunes old `raw/` copies.
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from wscontext.config import Config, load_config
 from wscontext.gitutil import GitError, git
 from wscontext.history import sync
 from wscontext.history.branch import branch_path, commit_paths, ls_blobs, read_tip
+from wscontext.index import build as index_build
 from wscontext.logs import HOOKS_LOG, append_log, now_iso
 from wscontext.redact.redactor import redact_bytes
 from wscontext.store.locks import FileLock, LockTimeout
@@ -133,6 +135,10 @@ def _final(store: StorePaths, config: Config, session_id: str, source: Path | No
     record.files_touched = sorted(set(record.files_touched) | set(state.get("files", [])))
     record.ended_at = ended_at or now_iso()
     record.ended_by = ended_by
+    if "retrieval" in state:
+        record.retrieval = state["retrieval"]
+    if "brief_tokens" in state:
+        record.brief_tokens = (record.brief_tokens or 0) + state["brief_tokens"]
     record.head_end = git_value(store, "rev-parse", "HEAD")
     if raw.is_file():
         # stored bytes per kind; subagent copies count as `subagent`, like sidechain lines
@@ -194,6 +200,17 @@ def _finalize_idle(store: StorePaths, config: Config) -> tuple[list[str], list[s
         except Exception as e:
             errors.append(f"{sid}: {type(e).__name__}: {e}")
     return done, errors
+
+
+def _index(entry: dict, update: Callable[[], object]) -> None:
+    """Keep the index current after a copy, a final step or a fetch, whether or not retrieval is
+    on: the switch changes only what the agent sees. A failure is logged on the hook-run entry
+    (visible to doctor and stats) and never undoes the work it follows."""
+    try:
+        update()
+    except Exception as e:
+        entry["ok"] = False
+        entry.setdefault("error", f"index: {type(e).__name__}: {e}")
 
 
 def _raw_files(store: StorePaths, session_id: str) -> list[Path]:
@@ -280,8 +297,12 @@ def run(action: str, session_id: str, transcript: str, cwd: str) -> None:
     try:
         if action == "fetch":
             entry["changed"] = sync.fetch(store, config)
+            if entry["changed"]:
+                _index(entry, lambda: index_build.refresh(store))
         elif action == "sweep":
             entry.update(sweep(store, config))
+            for sid in entry.get("finalized", []):
+                _index(entry, lambda: index_build.index_session(store, sid))
             if entry.get("errors"):
                 entry["ok"] = False
             elif not entry.get("finalized") and not entry.get("pruned"):
@@ -299,6 +320,7 @@ def run(action: str, session_id: str, transcript: str, cwd: str) -> None:
                     # the final step runs from the raw copy when the transcript is gone
                     _final(store, config, session_id, source if source.is_file() else None,
                            raw, "session-end")
+            _index(entry, lambda: index_build.index_session(store, session_id))
         else:
             raise ValueError(f"unknown worker action {action!r}")
     except Exception as e:

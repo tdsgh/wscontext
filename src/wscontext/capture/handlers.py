@@ -1,20 +1,21 @@
 """One handler per Claude Code hook event. Each is cheap: heavy work goes to the worker."""
 
-import time
 from collections.abc import Callable
 from pathlib import Path
 
-from wscontext.capture import worker
+from wscontext.capture import brief, worker
 from wscontext.capture.kinds import ctx_invocations, tool_kind
-from wscontext.capture.state import (active_path, git_author, git_value, idle_sessions,
-                                     read_json, turn_state_path, update_json, worktree_key)
+from wscontext.capture.state import (active_path, git_author, git_value,
+                                     read_json, sweep_due, turn_state_path, update_json,
+                                     worktree_key)
+from wscontext.cli.output import estimate_tokens
 from wscontext.config import Config
 from wscontext.logs import CTX_CALLS_LOG, append_log, now_iso
 from wscontext.store.paths import StorePaths
 from wscontext.store.records import RecordError, SessionRecord, read_session, write_session
 
 EDIT_TOOLS = {"Edit", "MultiEdit", "Write", "NotebookEdit"}
-SWEEP_EVERY_SECONDS = 86400
+BRIEF_SOURCES = {"startup", "clear", "compact"}  # not resume or fork: their context is held
 
 
 def _spawn(store: StorePaths, action: str, payload: dict) -> None:
@@ -35,16 +36,8 @@ def _update_state(store: StorePaths, config: Config, payload: dict,
     update_json(turn_state_path(store, payload["session_id"]), apply, config)
 
 
-def _sweep_due(store: StorePaths, config: Config) -> bool:
-    try:
-        if time.time() - float((store.state / "last_sweep").read_text()) < SWEEP_EVERY_SECONDS:
-            return bool(idle_sessions(store, config))
-    except (OSError, ValueError):
-        pass
-    return True
-
-
-def session_start(store: StorePaths, config: Config, payload: dict) -> None:
+def session_start(store: StorePaths, config: Config, payload: dict) -> str | None:
+    """Returns the session brief for the hook output, or None."""
     sid = payload["session_id"]
     try:
         read_session(store, sid)  # resume, clear and compact keep the original record
@@ -57,11 +50,16 @@ def session_start(store: StorePaths, config: Config, payload: dict) -> None:
     update_json(active_path(store),
                 lambda d: d.setdefault(worktree_key(store, config), {}).setdefault(sid, now_iso()),
                 config)
-    _update_state(store, config, payload)
+    _update_state(store, config, payload, lambda d: d.update(retrieval=config.retrieval.enabled))
     if config.sync.remote:
         _spawn(store, "fetch", payload)
-    if _sweep_due(store, config):
+    if sweep_due(store, config):
         worker.spawn_worker(["sweep", "", "", str(store.root)], store.root)
+    text = brief.build(store, config, sid) if payload.get("source") in BRIEF_SOURCES else None
+    if text:
+        _update_state(store, config, payload, lambda d: d.update(
+            brief_tokens=d.get("brief_tokens", 0) + estimate_tokens(text)))
+    return text
 
 
 def user_prompt_submit(store: StorePaths, config: Config, payload: dict) -> None:

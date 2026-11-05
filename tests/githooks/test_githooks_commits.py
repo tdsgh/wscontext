@@ -332,3 +332,16 @@ def test_merge_with_no_session_writes_no_checkpoint(repo):
     time.sleep(1)
     assert trailers(repo) == [] and checkpoint(store, head(repo)) is None
     assert log_lines(store, "git:post-merge") and not log_lines(store, "worker:git-checkpoint")
+
+
+def test_post_commit_spawns_a_sweep_when_one_is_due(repo, monkeypatch):
+    spawned = []
+    monkeypatch.setattr(handlers, "spawn_worker", lambda args, cwd: spawned.append(args))
+    store = StorePaths.resolve(repo)
+    config = load_config(repo)
+    handlers.post_commit(store, config, [], "")
+    assert [a[0] for a in spawned] == ["sweep"]
+    store.state.mkdir(parents=True, exist_ok=True)
+    (store.state / "last_sweep").write_text(f"{time.time()}\n")
+    handlers.post_commit(store, config, [], "")
+    assert len(spawned) == 1  # swept today and nothing idle
