@@ -28,8 +28,10 @@ from pathlib import Path
 
 PLUGIN_ID = "wscontext@wscontext"
 DEFAULT_DATA = Path.home() / ".claude" / "plugins" / "data" / "wscontext-wscontext"
-# What a headless session may do: edit files and make commits, nothing else.
-TOOLS = "Write Edit Read Bash(git add:*) Bash(git commit:*) Bash(git status:*)"
+# What a headless session may do: edit files and make commits, nothing else. Commits go through
+# Acc.commit, since a user-level `ask` rule on `git commit` is a denial in a headless session.
+TOOLS = "Write Edit Read Bash(git add:*) Bash(git status:*)"
+COMMIT_SCRIPT = '#!/bin/sh\nexec git commit -m "$1"\n'
 CLAUDE_TIMEOUT = 300
 WAIT = 60
 
@@ -129,6 +131,11 @@ class Acc:
     budget: float
     env: dict[str, str]
 
+    @property
+    def commit(self) -> str:
+        """The commit helper a session runs as `<path> "<message>"`; main writes it."""
+        return str(self.tmp / "acc-commit")
+
     # --- Git and ctx ---
 
     def run(self, cmd: list[str], cwd: Path, stdin: str | None = None, timeout: float = 120,
@@ -202,26 +209,32 @@ class Acc:
 
     def claude_cmd(self, session: str, resume: bool, tools: str) -> list[str]:
         cmd = ["claude", "-p", "--output-format", "stream-json", "--verbose",
-               "--permission-mode", "dontAsk", "--allowedTools", tools,
+               "--permission-mode", "dontAsk", "--allowedTools", f"{tools} Bash({self.commit} *)",
                "--max-budget-usd", str(self.budget),
                "--resume" if resume else "--session-id", session]
         return cmd + (["--model", self.model] if self.model else [])
 
     def claude_start(self, repo: Path, prompt: str, session: str | None = None, resume: bool = False,
-                     tools: str = TOOLS) -> tuple[str, subprocess.Popen]:
+                     tools: str = TOOLS) -> tuple[str, subprocess.Popen, str]:
         sid = session or str(uuid.uuid4())
-        proc = subprocess.Popen(self.claude_cmd(sid, resume, tools), cwd=repo, stdin=subprocess.PIPE,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.env)
-        proc.stdin.write(prompt)
-        proc.stdin.close()
-        return sid, proc
+        # Files, not pipes: a concurrent session never stalls on a full pipe while another is awaited.
+        logs = self.tmp / "claude"
+        logs.mkdir(exist_ok=True)
+        run = logs / f"{sid}-{time.monotonic_ns()}"
+        Path(f"{run}.prompt").write_text(prompt)
+        with open(f"{run}.prompt") as stdin, open(f"{run}.out", "w") as out, open(f"{run}.err", "w") as err:
+            proc = subprocess.Popen(self.claude_cmd(sid, resume, tools), cwd=repo, stdin=stdin,
+                                    stdout=out, stderr=err, env=self.env)
+        return sid, proc, str(run)
 
-    def claude_finish(self, sid: str, proc: subprocess.Popen) -> Claude:
+    def claude_finish(self, sid: str, proc: subprocess.Popen, run: str) -> Claude:
         try:
-            out, err = proc.communicate(timeout=CLAUDE_TIMEOUT)
+            proc.wait(timeout=CLAUDE_TIMEOUT)
         except subprocess.TimeoutExpired:
             proc.kill()
             raise Fail(f"claude -p ran longer than {CLAUDE_TIMEOUT}s")
+        out = Path(f"{run}.out").read_text()
+        err = Path(f"{run}.err").read_text()
         tools, result = [], {}
         for line in out.splitlines():
             try:
@@ -239,14 +252,13 @@ class Acc:
                       str(result.get("result", "")), tools)
 
     def claude(self, repo: Path, prompt: str, **kw) -> Claude:
-        sid, proc = self.claude_start(repo, prompt, **kw)
-        return self.claude_finish(sid, proc)
+        return self.claude_finish(*self.claude_start(repo, prompt, **kw))
 
     def commit_session(self, repo: Path, name: str, text: str, message: str, marker: str = "",
                        **kw) -> Claude:
         """A session that writes one file and commits it; returns once the commit is linked."""
         prompt = (f"{marker} Create the file {name} containing exactly this text: {text}\n"
-                  f"Then run `git add {name}`, and then `git commit -m \"{message}\"`, as two "
+                  f"Then run `git add {name}`, and then `{self.commit} \"{message}\"`, as two "
                   "separate commands. Do nothing else; reply done.").strip()
         done = self.claude(repo, prompt, **kw)
         check(not done.is_error, f"claude reported an error: {done.text[:300]}")
@@ -298,7 +310,7 @@ def capture_resume(acc: Acc) -> str:
     check(not first.is_error, first.text[:300])
     sid = first.session_id
     second = acc.claude(repo, "Append a second line, two, to notes.txt, then run `git add notes.txt` and "
-                              "`git commit -m \"add notes\"` as separate commands. Reply done.",
+                              f"`{acc.commit} \"add notes\"` as separate commands. Reply done.",
                         session=sid, resume=True)
     check(second.session_id == sid, f"resume gave session {second.session_id}, not {sid}")
     ended = acc.wait_ended(repo, sid)
@@ -349,11 +361,11 @@ def capture_concurrent(acc: Acc) -> str:
     init_repo(acc, repo)
     runs = [acc.claude_start(repo, f"Create the file {n}.txt containing exactly: {n}. Reply done.")
             for n in ("alpha", "beta")]
-    done = [acc.claude_finish(sid, proc) for sid, proc in runs]
+    done = [acc.claude_finish(*run) for run in runs]
     for d in done:
         check(not d.is_error, d.text[:300])
     seen = {}
-    for (sid, _), name in zip(runs, ("alpha.txt", "beta.txt")):
+    for (sid, _, _), name in zip(runs, ("alpha.txt", "beta.txt")):
         seen[name] = acc.wait_ended(repo, sid)
         check(seen[name]["files_touched"] == [name],
               f"session {sid[:8]} touched {seen[name]['files_touched']}, wanted [{name!r}]")
@@ -543,7 +555,7 @@ def stats(acc: Acc) -> str:
     repo = acc.repo("stats")
     init_repo(acc, repo)
     done = acc.claude(repo, "Create a.txt containing exactly: a and b.txt containing exactly: b, then read "
-                            "a.txt, then run `git add a.txt b.txt` and `git commit -m \"add a and b\"` as "
+                            f"a.txt, then run `git add a.txt b.txt` and `{acc.commit} \"add a and b\"` as "
                             "separate commands. Reply done.")
     check(not done.is_error, done.text[:300])
     sid = done.session_id
@@ -635,6 +647,8 @@ def main(argv: list[str] | None = None) -> int:
     tmp = Path(tempfile.mkdtemp(prefix="wscontext-acceptance-")).resolve()
     print(f"working directory: {tmp}\n")
     acc = Acc(tmp, plugin, args.model, args.max_budget_usd, env)
+    Path(acc.commit).write_text(COMMIT_SCRIPT)
+    Path(acc.commit).chmod(0o755)
     outcomes: list[tuple[str, str]] = []
     manual = list(MANUAL)
     try:
