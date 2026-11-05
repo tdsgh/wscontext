@@ -1,5 +1,7 @@
 import subprocess
 
+import pytest
+
 from conftest import branch_blob, put_store_file, run_git, set_identity
 
 from wscontext.config import Config, RedactionConfig, SyncConfig
@@ -49,7 +51,7 @@ def test_push_publishes_and_tracks(shared_remote):
     assert status(sa, ON) == SyncStatus("origin", 1, 0)
     assert push(sa, ON) is True
     assert _remote_tip(bare) == tip
-    assert read_tip(sa, "refs/remotes/origin/wscontext/history") == tip
+    assert read_tip(sa, "refs/wscontext/remotes/origin/history") == tip
     assert status(sa, ON) == SyncStatus("origin", 0, 0)
     _untouched(a, head)
 
@@ -243,7 +245,7 @@ def test_status_counts_commits_behind_after_a_git_fetch_of_the_history_ref(share
     push(sa, ON)
     _record(sb, "s-4")
     subprocess.run(["git", "fetch", "-q", "origin",
-                    f"+{HISTORY_REF}:refs/remotes/origin/wscontext/history"], cwd=b, check=True)
+                    f"+{HISTORY_REF}:refs/wscontext/remotes/origin/history"], cwd=b, check=True)
     assert status(sb, ON) == SyncStatus("origin", 1, 2)
 
 
@@ -262,7 +264,7 @@ def test_materialize_skips_pruned_paths(git_repo):
     assert not gone.exists()
 
 
-LEGACY_TRACKING = "refs/remotes/origin/wscontext/legacy-history"
+LEGACY_TRACKING = "refs/wscontext/remotes/origin/legacy-history"
 
 
 def _stage1_push(store, sid: str) -> str:
@@ -383,3 +385,59 @@ def test_a_plain_clone_or_fetch_has_no_history(shared_remote, tmp_path):
     run_git(c, "fetch", "-q", "--all")
     assert "wscontext" not in _refs(c)
     assert "wscontext" not in run_git(c, "branch", "-a")
+
+
+TRACKING = "refs/wscontext/remotes/origin/history"
+OLD_TRACKING = "refs/remotes/origin/wscontext/history"
+OLD_LEGACY_TRACKING = "refs/remotes/origin/wscontext/legacy-history"
+
+
+def test_a_plain_fetch_prune_leaves_the_tracking_refs(shared_remote):
+    bare, a, b = shared_remote
+    sa, sb = StorePaths.resolve(a), StorePaths.resolve(b)
+    _record(sa, "s-a")
+    assert push(sa, ON) is True
+    _stage1_push(sa, "s-old")
+    assert fetch(sb, ON) is True
+    tips = [read_tip(sb, TRACKING), read_tip(sb, LEGACY_TRACKING)]
+    assert None not in tips and sync.shared_tips(sb) == tips
+    run_git(bare, "update-ref", "-d", LEGACY_REF)  # a teammate's push removed it
+    run_git(b, "fetch", "-q", "--prune", "origin")
+    assert [read_tip(sb, TRACKING), read_tip(sb, LEGACY_TRACKING)] == tips
+    assert sync.shared_tips(sb) == tips
+
+
+def test_a_plain_fetch_of_the_legacy_branch_leaves_the_tracking_refs(shared_remote):
+    _, a, b = shared_remote
+    sa, sb = StorePaths.resolve(a), StorePaths.resolve(b)
+    tip = _record(sa, "s-a")
+    assert push(sa, ON) is True
+    assert fetch(sb, ON) is True
+    legacy = _stage1_push(sa, "s-late")
+    run_git(b, "fetch", "-q", "origin")
+    assert read_tip(sb, OLD_TRACKING) == legacy  # git's own tracking ref of the branch
+    assert read_tip(sb, TRACKING) == tip
+    assert read_tip(sb, LEGACY_TRACKING) is None
+    assert sync.shared_tips(sb) == [tip]
+    # The old location was cleared once already; git's ref is left to git.
+    assert fetch(sb, ON) is True
+    assert read_tip(sb, LEGACY_TRACKING) == legacy
+    assert read_tip(sb, OLD_TRACKING) == legacy
+
+
+@pytest.mark.parametrize("first", ["fetch", "push"])
+def test_old_tracking_refs_are_removed_by_the_first_fetch_or_push(shared_remote, first):
+    _, a, b = shared_remote
+    sa, sb = StorePaths.resolve(a), StorePaths.resolve(b)
+    tip = _record(sa, "s-a")
+    assert push(sa, ON) is True
+    run_git(b, "fetch", "-q", "origin", f"+{HISTORY_REF}:{OLD_TRACKING}")
+    run_git(b, "update-ref", OLD_LEGACY_TRACKING, tip)
+    assert sync.shared_tips(sb) == []  # never read as shared
+    _stage1_push(sa, "s-old")  # the remote legacy branch must not bring the old ref back
+    _record(sb, "s-b")
+    assert (fetch(sb, ON) if first == "fetch" else push(sb, ON)) is True
+    assert read_tip(sb, OLD_TRACKING) is None
+    assert read_tip(sb, OLD_LEGACY_TRACKING) is None
+    tips = [read_tip(sb, ref) for ref in (TRACKING, LEGACY_TRACKING)]
+    assert sync.shared_tips(sb) == [t for t in tips if t]

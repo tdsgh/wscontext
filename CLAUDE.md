@@ -49,7 +49,7 @@ it instead of restating them — `→ ADR-0NN` refers to
 - Everything written to the store or a log passes through the redactor first
   (→ ADR-006). *(non-negotiable)*
 - Read Claude Code transcripts only through an adapter (→ ADR-002).
-- Push the history branch only from the `pre-push` hook and `ctx sync`
+- Push the history ref only from the `pre-push` hook and `ctx sync`
   (→ ADR-008).
 - No POSIX-only calls in application code; shell stays in the plugin launchers
   (`bin/ctx`, `bin/ctx.cmd`) and the Git-hook shims (→ ADR-020, ADR-022).

@@ -140,8 +140,8 @@ def _diverge(shared_remote, a_rel, a_data, b_rel, b_data):
     a_tip = commit_paths(sa, [put_store_file(sa.local, a_rel, a_data)], "a")
     run_git(a, "push", "-q", "origin", f"{HISTORY_REF}:{HISTORY_REF}")
     b_tip = commit_paths(sb, [put_store_file(sb.local, b_rel, b_data)], "b")
-    run_git(b, "fetch", "-q", "origin", f"+{HISTORY_REF}:refs/remotes/origin/wscontext/history")
-    remote = run_git(b, "rev-parse", "refs/remotes/origin/wscontext/history").strip()
+    run_git(b, "fetch", "-q", "origin", f"+{HISTORY_REF}:refs/wscontext/remotes/origin/history")
+    remote = run_git(b, "rev-parse", "refs/wscontext/remotes/origin/history").strip()
     assert remote == a_tip
     return sb, b, b_tip, a_tip
 

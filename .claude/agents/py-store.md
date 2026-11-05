@@ -1,6 +1,6 @@
 ---
 name: py-store
-description: Configuration, store layout, records, locks and the wscontext/history branch. Use for a build-plan step under src/wscontext/config.py, src/wscontext/gitutil.py, src/wscontext/store/ or src/wscontext/history/.
+description: Configuration, store layout, records, locks and the wscontext history ref (`refs/wscontext/history`). Use for a build-plan step under src/wscontext/config.py, src/wscontext/gitutil.py, src/wscontext/store/ or src/wscontext/history/.
 model: sonnet
 ---
 <!-- kit:core/agents/role v1 -->
@@ -15,9 +15,9 @@ every subtree you touch.
 - Every Git call goes through `gitutil.git`. Never build a subprocess `env` from
   `os.environ`.
 - Write files atomically: temp file in the same directory, then `os.replace`.
-- History-branch writes use plumbing only and never touch the working tree,
+- History writes use plumbing only and never touch the working tree,
   the index or `HEAD`. Ref updates are compare-and-swap (→ ADR-007).
-- Files on the history branch are append-only and named by session ID or
+- Files in shared history are append-only and named by session ID or
   commit SHA.
 - Records carry `schema_version` and `author`. Readers accept every earlier
   version.

@@ -30,13 +30,37 @@ class SyncStatus:
     behind: int
 
 
+# Tracking refs sit outside `refs/remotes/`: a plain `git fetch --prune` never deletes
+# them and the default `refs/heads/*` mapping never overwrites them.
 def tracking_ref(remote: str) -> str:
-    return f"refs/remotes/{remote}/wscontext/history"
+    return f"refs/wscontext/remotes/{remote}/history"
 
 
 def legacy_tracking_ref(remote: str) -> str:
     """Where a fetch puts the remote's stage-1 `LEGACY_REF` branch."""
-    return f"refs/remotes/{remote}/wscontext/legacy-history"
+    return f"refs/wscontext/remotes/{remote}/legacy-history"
+
+
+def _drop_old_tracking(store: StorePaths, remote: str) -> None:
+    """Delete the tracking refs earlier builds kept under `refs/remotes/<remote>/wscontext/`.
+
+    Runs only while neither new tracking ref exists, i.e. once: a ref a plain `git fetch`
+    later recreates from a stage-1 teammate's branch is git's own. Never read as shared.
+    Each delete is compare-and-swap on the tip read.
+    """
+    if git("for-each-ref", "--count=1", tracking_ref(remote), legacy_tracking_ref(remote),
+           cwd=store.root).strip():
+        return
+    out = git("for-each-ref", "--format=%(refname) %(objectname)",
+              f"refs/remotes/{remote}/wscontext/history",
+              f"refs/remotes/{remote}/wscontext/legacy-history", cwd=store.root)
+    for line in out.splitlines():
+        ref, old = line.split()
+        try:
+            git("update-ref", "-d", ref, old, cwd=store.root)
+            log.info("removed the old history tracking ref %s", ref)
+        except GitError as e:
+            log.debug("old tracking ref CAS delete failed: %s", e)
 
 
 def fetch(store: StorePaths, config: Config, force: bool = False) -> bool:
@@ -59,10 +83,11 @@ def fetch(store: StorePaths, config: Config, force: bool = False) -> bool:
         except (OSError, ValueError):
             pass
     atomic_write(stamp, f"{now}\n".encode())
+    _drop_old_tracking(store, remote)
     # A glob refspec that matches nothing succeeds: a remote without history is not an error.
-    # --prune drops the tracking ref of a remote branch that is gone, so no push leases on it.
-    # --refmap= stops the configured refspec from also writing the legacy branch to
-    # `tracking_ref`, which `refs/heads/*:refs/remotes/<remote>/*` maps it to.
+    # --prune drops the tracking ref of a remote ref that is gone, so no push leases on it.
+    # --refmap= stops the configured `refs/heads/*` refspec from recreating the old
+    # `refs/remotes/<remote>/wscontext/history` from the legacy branch.
     git("fetch", "--quiet", "--prune", "--refmap=", "--no-tags", "--no-write-fetch-head",
         "--no-recurse-submodules", remote, f"+{HISTORY_REF}*:{tracking_ref(remote)}*",
         f"+{LEGACY_REF}*:{legacy_tracking_ref(remote)}*", cwd=store.root)
@@ -89,6 +114,7 @@ def push(store: StorePaths, config: Config) -> bool:
         return False
     try:
         migrate_legacy(store)
+        _drop_old_tracking(store, remote)
         for attempt in range(2):
             tip = read_tip(store)
             if tip is None:

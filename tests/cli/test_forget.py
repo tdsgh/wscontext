@@ -158,7 +158,7 @@ def test_forgetting_an_unshared_session_after_a_fetch_keeps_it_gone(shared_remot
     assert (sa.records / "sessions" / "sess-c.json").exists()
     # pushing sends neither sess-x nor any earlier local commit that held it
     assert sync.push(sa, ON)
-    remote_paths = ls_blobs(sa, read_tip(sa, "refs/remotes/origin/wscontext/history"))
+    remote_paths = ls_blobs(sa, read_tip(sa, "refs/wscontext/remotes/origin/history"))
     assert not [p for p in remote_paths if "sess-x" in p]
 
 
