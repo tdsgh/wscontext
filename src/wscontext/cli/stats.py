@@ -36,8 +36,10 @@ def run(args, store: StorePaths, config: Config) -> Reply:
         blocks = views.hooks_blocks(hooks.summarize(store, since))
     elif args.view == "queries":
         calls = queries.join_calls(store, since)
-        first = queries.ctx_first(store, data.window_sessions(store, since))
-        blocks = views.queries_blocks(queries.summarize(calls, first), calls,
+        sessions = data.window_sessions(store, since)
+        summary = queries.summarize(calls, queries.ctx_first(store, sessions),
+                                    queries.adoption(sessions))
+        blocks = views.queries_blocks(summary, calls,
                                       len(calls) if args.full else args.limit or DEFAULT_CALLS)
     else:
         if not args.session_id:
@@ -51,6 +53,7 @@ def run(args, store: StorePaths, config: Config) -> Reply:
         command = f"ctx stats session {record.session_id}"
         calls = [c for c in queries.join_calls(store, since) if c["session_id"] == record.session_id]
         blocks = views.session_blocks(turns.session_detail(record), calls,
-                                      queries.first_tool(store, record))
+                                      queries.first_tool(store, record),
+                                      data.session_volume(store, record))
     return Reply(render(command, blocks, full=args.full, as_json=args.json,
                         hint="Rerun with --full.", meta=meta))

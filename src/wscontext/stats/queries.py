@@ -5,7 +5,7 @@ from datetime import datetime
 from wscontext.capture.kinds import tool_kind
 from wscontext.cli.data import parse_time, transcript_turns
 from wscontext.logs import CTX_CALLS_LOG
-from wscontext.stats.data import percentile, read_log
+from wscontext.stats.data import week_of, percentile, read_log
 from wscontext.store.paths import StorePaths
 from wscontext.store.records import SessionRecord
 
@@ -81,7 +81,23 @@ def ctx_first(store: StorePaths, sessions: list[SessionRecord]) -> dict:
             "first_tool": firsts}
 
 
-def summarize(calls: list[dict], first: dict) -> dict:
+def adoption(sessions: list[SessionRecord]) -> dict:
+    """Sessions that called `ctx` at all and `ctx find`, overall and by week of the start."""
+    def row(group: list[SessionRecord]) -> dict:
+        return {"sessions": len(group), "with_ctx": sum(bool(sum(r.ctx_calls.values())) for r in group),
+                "with_find": sum(bool(r.ctx_calls.get("find")) for r in group)}
+
+    weeks: dict[str, list[SessionRecord]] = {}
+    for rec in sessions:
+        if week := week_of(rec.started_at):
+            weeks.setdefault(week, []).append(rec)
+    total = row(sessions)
+    return {**total, "with_ctx_share": total["with_ctx"] / len(sessions) if sessions else None,
+            "with_find_share": total["with_find"] / len(sessions) if sessions else None,
+            "by_week": [{"week": w, **row(weeks[w])} for w in sorted(weeks)]}
+
+
+def summarize(calls: list[dict], first: dict, adopted: dict) -> dict:
     by_command: dict[str, int] = {}
     flags: dict[str, int] = {}
     for c in calls:
@@ -96,4 +112,5 @@ def summarize(calls: list[dict], first: dict) -> dict:
             "ms_p50": percentile(times, 50), "ms_p95": percentile(times, 95),
             "output_bytes_total": sum(sizes), "results_total": sum(counts), "flags": flags,
             "sessions_considered": first["sessions_considered"],
-            "ctx_first": first["ctx_first"], "ctx_first_share": first["ctx_first_share"]}
+            "ctx_first": first["ctx_first"], "ctx_first_share": first["ctx_first_share"],
+            "adoption": adopted}
