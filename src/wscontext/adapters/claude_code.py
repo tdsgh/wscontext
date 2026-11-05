@@ -15,6 +15,20 @@ TOKEN_KEYS = {"input_tokens": "input", "output_tokens": "output",
               "cache_read_input_tokens": "cache_read",
               "cache_creation_input_tokens": "cache_creation"}
 
+# Line types and attachment types that hold Claude Code's internal state, not the
+# conversation: API request records, queue and file-history entries, listings and snapshots.
+BOOKKEEPING_PREFIXES = ("api-request", "file-history-")
+BOOKKEEPING_TYPES = frozenset({"queue-operation", "last-prompt", "atis-latch", "tools-used"})
+BOOKKEEPING_ATTACHMENTS = frozenset({
+    "prompt_snapshot", "skill_listing", "deferred_tools_record", "deferred_tools_delta",
+    "agent_listing_delta", "mcp_instructions_delta", "instructions", "nested_memory",
+    "invoked_skills", "session_context", "environment", "model", "date", "auto_mode",
+    "credential_org", "command_permissions", "remote_session_change", "silent_turn_reminder",
+    "thinking_drop"})
+META_ATTACHMENTS = frozenset({"queued_command", "file", "edited_text_file",
+                              "hook_additional_context"})
+TITLE_TYPES = frozenset({"ai-title", "summary"})
+
 
 def _loads(line: str) -> dict | None:
     try:
@@ -64,6 +78,64 @@ def _major(version: object) -> int | None:
     if isinstance(version, str) and version.split(".")[0].isdigit():
         return int(version.split(".")[0])
     return None
+
+
+def entry_kind(obj: dict, sidechain: bool = False) -> str:
+    """The kind of one transcript line: prompt, reply, tool_result, meta, subagent,
+    compaction, title, bookkeeping or unknown. A type or attachment type not named here is
+    unknown. sidechain=True classifies a subagent file's lines by shape, as `parse` does;
+    in a main transcript a sidechain line is `subagent`."""
+    kind = obj.get("type")
+    if not isinstance(kind, str):
+        return "unknown"
+    if kind in BOOKKEEPING_TYPES or kind.startswith(BOOKKEEPING_PREFIXES):
+        return "bookkeeping"
+    if kind in TITLE_TYPES:
+        return "title"
+    if obj.get("isSidechain") and not sidechain:
+        return "subagent"
+    if kind == "assistant":
+        return "reply"
+    if kind == "user":
+        message = obj.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if obj.get("isCompactSummary"):
+            return "compaction"
+        if isinstance(content, list) and any(
+                isinstance(b, dict) and b.get("type") == "tool_result" for b in content):
+            return "tool_result"
+        return "meta" if obj.get("isMeta") else "prompt"
+    if kind == "system":
+        return "compaction" if obj.get("subtype") == "compact_boundary" else "meta"
+    if kind == "attachment":
+        attachment = obj.get("attachment")
+        sub = attachment.get("type") if isinstance(attachment, dict) else None
+        if sub in BOOKKEEPING_ATTACHMENTS:
+            return "bookkeeping"
+        if sub in META_ATTACHMENTS:
+            return "meta"
+    return "unknown"
+
+
+def measure(path: Path, sidechain: bool = False) -> dict[str, int]:
+    """Sizes of a transcript file by entry kind; reads only and returns no content.
+
+    `<kind>` is the bytes of its lines (newline included), `<kind> lines` their count and
+    `<kind>.<field>` the bytes of one top-level field as `"field":value`, for every kind
+    but bookkeeping. A line that is not a JSON object counts as unknown."""
+    sizes: dict[str, int] = {}
+    for line in path.read_bytes().splitlines(keepends=True):
+        obj = _loads(line.decode("utf-8", errors="replace"))
+        kind = "unknown" if obj is None else entry_kind(obj, sidechain)
+        sizes[kind] = sizes.get(kind, 0) + len(line)
+        sizes[f"{kind} lines"] = sizes.get(f"{kind} lines", 0) + 1
+        if obj is None or kind == "bookkeeping":
+            continue
+        for key, value in obj.items():
+            n = len(json.dumps({key: value}, ensure_ascii=False,
+                               separators=(",", ":")).encode()) - 2
+            sizes[f"{kind}.{key}"] = sizes.get(f"{kind}.{key}", 0) + n
+    return sizes
 
 
 class ClaudeCodeAdapter:

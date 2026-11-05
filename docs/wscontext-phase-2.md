@@ -163,6 +163,10 @@ Alpha starts sharing between machines stays on the remote.
 
 **The operator can change:**
 - The size limits that trigger a warning.
+- How much of a long tool result is kept: all of it (the default), or the
+  first N characters, marked as cut. The choice is committed, so every
+  machine stores the same shape, and it applies to sessions captured after it
+  changes.
 - How long raw transcripts are kept on this machine, already in the
   configuration; older ones are removed locally, while session and commit
   records stay.
@@ -171,7 +175,7 @@ Alpha starts sharing between machines stays on the remote.
 - Choose per machine what is trimmed. The rule is the same everywhere, so two
   machines never store different shapes of one session.
 - Lose anything search, `ctx show`, `ctx why`, the brief or the turn
-  statistics read.
+  statistics read, beyond the tool-result tail a repository chose to cut.
 - Shrink history that is already shared. Pruning removes local copies only;
   removing shared history is a rewrite, in Finalize.
 - Lose shared history when a remote that already holds it in the stage-1

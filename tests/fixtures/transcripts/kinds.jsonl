@@ -1,0 +1,46 @@
+{"type":"user","version":"2.1.0","sessionId":"k1","uuid":"p1","timestamp":"2026-03-01T10:00:00Z","message":{"role":"user","content":"add a retry to the fetcher"}}
+{"type":"assistant","version":"2.1.0","sessionId":"k1","uuid":"r1","timestamp":"2026-03-01T10:00:02Z","message":{"id":"m1","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"fetch.py"}}]},"wireToolInputs":{"t1":{"file_path":"fetch.py"}}}
+{"type":"user","version":"2.1.0","sessionId":"k1","uuid":"tr1","timestamp":"2026-03-01T10:00:03Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"def fetch(): pass"}]},"toolUseResult":{"type":"text","file":{"content":"def fetch(): pass"}}}
+{"type":"user","version":"2.1.0","sessionId":"k1","uuid":"mt1","isMeta":true,"timestamp":"2026-03-01T10:00:04Z","message":{"role":"user","content":"a notification"}}
+{"type":"system","subtype":"stop_hook_summary","version":"2.1.0","sessionId":"k1","uuid":"s1","hookCount":1}
+{"type":"attachment","version":"2.1.0","sessionId":"k1","uuid":"at1","attachment":{"type":"queued_command","prompt":"also log it"}}
+{"type":"attachment","version":"2.1.0","sessionId":"k1","uuid":"at2","attachment":{"type":"file","filename":"notes.md"}}
+{"type":"attachment","version":"2.1.0","sessionId":"k1","uuid":"at3","attachment":{"type":"edited_text_file","filename":"fetch.py"}}
+{"type":"attachment","version":"2.1.0","sessionId":"k1","uuid":"at4","attachment":{"type":"hook_additional_context","content":["a brief"]}}
+{"type":"system","subtype":"compact_boundary","version":"2.1.0","sessionId":"k1","uuid":"c1","compactMetadata":{"trigger":"auto"}}
+{"type":"user","version":"2.1.0","sessionId":"k1","uuid":"c2","isCompactSummary":true,"message":{"role":"user","content":"summary of earlier work"}}
+{"type":"ai-title","sessionId":"k1","aiTitle":"Retry for the fetcher"}
+{"type":"summary","summary":"older title line","leafUuid":"p1"}
+{"type":"assistant","version":"2.1.0","sessionId":"k1","uuid":"sc1","isSidechain":true,"message":{"id":"m9","role":"assistant","content":[{"type":"text","text":"from a subagent"}]}}
+{"type":"api-request","sessionId":"k1","id":"q1","params":{}}
+{"type":"api-request-blob","sessionId":"k1","hash":"h1","message":{}}
+{"type":"api-request-shape","sessionId":"k1","shapeHash":"h2","shape":{}}
+{"type":"queue-operation","sessionId":"k1","operation":"enqueue","content":"also log it"}
+{"type":"last-prompt","sessionId":"k1","lastPrompt":"add a retry","leafUuid":"p1"}
+{"type":"atis-latch","sessionId":"k1","atis":true}
+{"type":"file-history-snapshot","messageId":"p1","snapshot":{}}
+{"type":"file-history-delta","messageId":"p1","backup":{}}
+{"type":"tools-used","sessionId":"k1","tools":["Read"]}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"prompt_snapshot"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"skill_listing"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"deferred_tools_record"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"deferred_tools_delta"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"agent_listing_delta"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"mcp_instructions_delta"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"instructions"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"nested_memory"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"invoked_skills"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"session_context"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"environment"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"model"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"date"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"auto_mode"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"credential_org"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"command_permissions"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"remote_session_change"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"silent_turn_reminder"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"thinking_drop"}}
+{"type":"brand-new-entry","sessionId":"k1","payload":{"x":1}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"brand_new_attachment"}}
+{"sessionId":"k1","note":"no type at all"}
+not json at all
