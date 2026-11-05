@@ -55,7 +55,7 @@ are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
 - **The reasoning behind code stops getting lost.** Without wscontext, the
   "why" behind agent-written code disappears when the session ends. With it,
   that reasoning is tied to the commit and lives in Git
-  ([wscontext-phase-1.md](wscontext-phase-1.md) §6–7).
+  ([wscontext-phase-1.md](hist/wscontext-phase-1.md) §6–7).
 - **Less rediscovery.** Past decisions and rejected approaches are searchable,
   so neither the developer nor the agent re-litigates them.
 - **Team memory without a server.** History is shared through an orphan Git

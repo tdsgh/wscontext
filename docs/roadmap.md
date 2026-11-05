@@ -44,8 +44,8 @@ Each stage can be used on its own. Stop as soon as the value stops growing.
 Plugin, capture with redaction, commit linking, opt-in history sharing, and
 `ctx why`, `sessions`, `show`, `forget` and `stats`.
 
-- **Requirements:** [wscontext-phase-1.md](wscontext-phase-1.md).
-- **Build plan:** [build-plan-wscontext-phase-1.md](build-plan-wscontext-phase-1.md).
+- **Requirements:** [wscontext-phase-1.md](hist/wscontext-phase-1.md).
+- **Build plan:** [build-plan-wscontext-phase-1.md](hist/build-plan-wscontext-phase-1.md).
 - **Monitoring added:** collected data, Claude Code turns, `ctx` calls, capture
   health.
 - **Acceptance run:** a scripted run of the stage-1 scenarios against the
@@ -62,22 +62,35 @@ Plugin, capture with redaction, commit linking, opt-in history sharing, and
 FTS5 index with the query-time gap check, `ctx find`, the session brief at
 start, the `ctx` skill and CLAUDE.md triggers for search.
 
+- **Requirements:** [wscontext-phase-2.md](wscontext-phase-2.md).
 - **Monitoring added:** index size and lag; adoption (sessions with a `ctx`
   call, `ctx` before the first search or read).
-- **Store size:** the transcript copy drops Claude Code's bookkeeping entries;
-  decide whether the history branch moves outside `refs/heads/` so a plain
-  clone does not fetch it (would change ADR-007, ADR-008).
+- **Stored data volume:** settled before Alpha shares history, since shared
+  history is append-only and the larger copy wins on merge.
+  - *Measure:* bytes per session by kind (conversation, tool results,
+    subagents, snapshots, bookkeeping), local store versus history branch,
+    growth over time, in `ctx stats data`.
+  - *Refine what is stored:* drop Claude Code's bookkeeping entries; decide
+    what is kept of large tool results; settle whether the PreCompact snapshot
+    is needed; nothing `why`, `show`, `find` or the turn statistics read is
+    lost. Earlier captures are not re-trimmed.
+  - *Control:* a size figure per session and per store with a warning in
+    `ctx doctor` and `ctx stats`; `retention.raw_days` enforced on the local
+    store (records kept); shared history moves outside `refs/heads/` so a
+    plain clone does not fetch it (supersedes ADR-007, ADR-008 in part).
 - **Abandoned sessions:** a session that never sends `SessionEnd` is finalized
   once idle past the staleness window: final copy, counts and history commit.
 - **Benchmark switch:** a configuration setting turns the brief and search off,
   for the on/off benchmark.
 - **Eval set:** 20 questions about past work, each with the expected session or
   commit, kept in the repository and run by a `ctx` eval command.
-- **Eval corpus:** open — which captured history the eval set searches before
-  Alpha.
+- **Eval corpus:** a fixed corpus recorded once by a scripted headless run in a
+  throwaway repository, redacted and kept in the repository.
 - **New agent:** `py-index`.
-- **Gate:** the stage's acceptance scenarios pass, and the right session or
-  commit is in the top 3 for at least 15 of the 20 questions.
+- **Gate:** the stage's acceptance scenarios pass, the right session or
+  commit is in the top 3 for at least 15 of the 20 questions, and a stored
+  session is at most a set share of its source transcript, measured on the
+  eval corpus.
 
 ## Stage 3 — Code graph
 
@@ -129,8 +142,7 @@ shared repository.
 - A versioned plugin release published through the marketplace on the chosen
   Git host, with a changelog.
 - A README covering install, init, sharing, stats and uninstall.
-- Retention pruning, and purge of a shared session (branch rewrite with
-  guidance).
+- Purge of a shared session (branch rewrite with guidance).
 - A performance check of hook latency against the budget, from
   `ctx stats hooks`, on a large repository.
 - A Windows 11 VM (UTM or Parallels on Apple Silicon): run the offline suite,
