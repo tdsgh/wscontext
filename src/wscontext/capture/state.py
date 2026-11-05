@@ -1,14 +1,16 @@
 """Host-local state files shared by the hook handlers and the worker. Stdlib only."""
 
 import json
+import time
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 
 from wscontext.config import Config
 from wscontext.gitutil import GitError, git
 from wscontext.redact.redactor import redact_text
 from wscontext.store.locks import FileLock
-from wscontext.store.paths import StorePaths
+from wscontext.store.paths import StorePaths, is_safe_name
 from wscontext.store.records import write_json
 
 
@@ -41,6 +43,37 @@ def update_json(path: Path, change: Callable[[dict], None],
         change(data)
         write_json(path, data, config)
     return data
+
+
+def parse_time(value) -> float:
+    """An ISO timestamp as seconds since the epoch; 0 when it is not one."""
+    try:
+        return datetime.fromisoformat(value).timestamp()
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def last_activity(store: StorePaths, session_id: str, started) -> float:
+    """When a session last did something: its start in `active.json`, or the last write of
+    its turn state, which every prompt and tool call rewrites."""
+    last = parse_time(started)
+    try:
+        last = max(last, turn_state_path(store, session_id).stat().st_mtime)
+    except OSError:
+        pass
+    return last
+
+
+def idle_sessions(store: StorePaths, config: Config) -> list[tuple[str, str]]:
+    """Active sessions in any worktree idle past the staleness window, as
+    (worktree key, session ID)."""
+    cutoff = time.time() - config.capture.stale_session_minutes * 60
+    idle = []
+    for key, sessions in read_json(active_path(store)).items():
+        for sid, started in sessions.items() if isinstance(sessions, dict) else ():
+            if is_safe_name(sid) and last_activity(store, sid, started) < cutoff:
+                idle.append((key, sid))
+    return idle
 
 
 def git_value(store: StorePaths, *args: str) -> str | None:

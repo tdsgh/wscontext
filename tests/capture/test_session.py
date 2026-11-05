@@ -105,3 +105,227 @@ def test_no_secret_in_a_branch_name_reaches_disk(hook, git_repo):
     for rel, (_, sha, _) in ls_blobs(store, read_tip(store)).items():
         assert secret.encode() not in subprocess.run(
             ["git", "cat-file", "blob", sha], cwd=git_repo, capture_output=True).stdout, rel
+
+
+# --- stage 2: reduced copies, idle finalization, local pruning ---
+
+import os
+from datetime import datetime, timedelta, timezone
+
+from wscontext.adapters.claude_code import measure
+from wscontext.capture import dispatch, worker
+from wscontext.capture.state import active_path, read_json, turn_state_path, update_json, worktree_key
+from wscontext.config import Config, load_config
+from wscontext.githooks.handlers import link_sessions
+from wscontext.history.branch import read_blob
+from wscontext.history.sync import materialize
+from wscontext.store.records import write_session
+
+
+def make_idle(store, sid: str, hours: float = 3) -> datetime:
+    """Backdate a session's start and its last prompt or tool call."""
+    at = datetime.now(timezone.utc) - timedelta(hours=hours)
+    update_json(active_path(store),
+                lambda d: d.setdefault(worktree_key(store, Config()), {}).__setitem__(
+                    sid, at.isoformat(timespec="seconds")), Config())
+    turn = turn_state_path(store, sid)
+    if turn.exists():
+        os.utime(turn, (at.timestamp(), at.timestamp()))
+    return at
+
+
+def start_other(store, sid: str = "sess-other") -> dict:
+    return dispatch.run("SessionStart", json.dumps(
+        {"session_id": sid, "transcript_path": "", "cwd": str(store.root), "source": "startup"}))
+
+
+def run_session(hook, end: bool = True) -> None:
+    for event, fixture in [("SessionStart", "session_start"), ("UserPromptSubmit", "user_prompt_submit"),
+                           ("PostToolUse", "post_tool_use_read"), ("Stop", "stop")]:
+        assert hook(event, fixture)["ok"]
+    if end:
+        assert hook("SessionEnd", "session_end")["ok"]
+
+
+def worker_lines(store, event: str) -> list[dict]:
+    return [e for e in map(json.loads, (store.logs / "hooks.jsonl").read_text().splitlines())
+            if e["event"] == event]
+
+
+def test_stored_copy_is_reduced_and_its_bytes_recorded(hook, transcript):
+    with transcript.open("a") as f:
+        f.write('{"type":"api-request","sessionId":"sess-cap1","params":{"system":"long"}}\n')
+    run_session(hook)
+    store = hook.store
+    [raw] = (store.raw / "sessions").glob("*-sess-cap1.jsonl")
+    assert b"api-request" not in raw.read_bytes()
+    sub = store.raw / "subagents" / "sess-cap1" / "abc123.jsonl"
+    rec = read_session(store, "sess-cap1")
+    assert rec.ended_by == "session-end"
+    source = transcript.stat().st_size + (
+        transcript.parent / "sess-cap1" / "subagents" / "agent-abc123.jsonl").stat().st_size
+    sizes = rec.transcript_bytes
+    assert sizes["source"] == source
+    assert sizes["stored"] == raw.stat().st_size + sub.stat().st_size < source
+    assert sum(v for k, v in sizes.items() if k not in {"source", "stored"}) == sizes["stored"]
+    # sidechain lines in the main copy and the subagent copies both count as `subagent`
+    assert sizes["subagent"] == measure(raw)["subagent"] + sub.stat().st_size
+    assert sizes["prompt"] > 0
+
+
+def test_turn_state_records_the_transcript(hook, transcript):
+    hook("UserPromptSubmit", "user_prompt_submit")
+    state = json.loads(turn_state_path(hook.store, "sess-cap1").read_text())
+    assert state["transcript"] == str(transcript)
+
+
+def test_abandoned_session_is_finalized_by_sweep_then_resumed(hook, git_repo):
+    store = hook.store
+    run_session(hook, end=False)
+    idle_since = make_idle(store, "sess-cap1")
+    assert start_other(store)["ok"]  # the next session start sweeps
+
+    rec = read_session(store, "sess-cap1")
+    assert rec.ended_by == "idle" and rec.ended_at == idle_since.isoformat(timespec="seconds")
+    assert rec.tool_calls == {"read": 1} and len(rec.turns) == 3 and rec.transcript_bytes["source"]
+    paths = set(ls_blobs(store, read_tip(store)))
+    [raw] = (store.raw / "sessions").glob("*-sess-cap1.jsonl")
+    assert {"records/sessions/sess-cap1.json", f"raw/sessions/{raw.name}"} <= paths
+    assert list(json.loads(active_path(store).read_text())[str(store.root)]) == ["sess-other"]
+    assert not turn_state_path(store, "sess-cap1").exists()
+    [line] = worker_lines(store, "worker:sweep")
+    assert line["ok"] and line["finalized"] == ["sess-cap1"]
+
+    # resumed: active again, its new counts add to the earlier ones, its commits are linked
+    hook("SessionStart", "session_start")
+    hook("PostToolUse", "post_tool_use_edit")
+    (git_repo / "b.txt").write_text("b\n")
+    subprocess.run(["git", "add", "b.txt"], cwd=git_repo, check=True)
+    message = git_repo / ".git" / "MSG"
+    message.write_text("add b\n")
+    link_sessions(store, load_config(git_repo), [str(message)], "")
+    subprocess.run(["git", "commit", "-q", "-F", str(message)], cwd=git_repo, check=True)
+    out = subprocess.run(["git", "log", "-1", "--format=%(trailers:key=AI-Session,valueonly)"],
+                         cwd=git_repo, capture_output=True, text=True, check=True).stdout
+    assert "sess-cap1" in out.split()
+    assert hook("SessionEnd", "session_end")["ok"]
+    rec = read_session(store, "sess-cap1")
+    assert rec.tool_calls == {"read": 1, "edit": 1} and rec.ended_by == "session-end"
+
+
+def test_a_prompt_after_idle_finalization_makes_the_session_active_again(hook):
+    store = hook.store
+    run_session(hook, end=False)
+    make_idle(store, "sess-cap1")
+    worker.run("sweep", "", "", str(store.root))
+    assert "sess-cap1" not in read_json(active_path(store)).get(str(store.root), {})
+    hook("UserPromptSubmit", "user_prompt_submit")
+    assert "sess-cap1" in read_json(active_path(store))[str(store.root)]
+
+
+def test_sweep_finalizes_from_the_raw_copy_when_the_transcript_is_gone(hook, transcript):
+    store = hook.store
+    run_session(hook, end=False)
+    transcript.unlink()
+    make_idle(store, "sess-cap1")
+    worker.run("sweep", "", "", str(store.root))
+    rec = read_session(store, "sess-cap1")
+    assert rec.ended_by == "idle" and len(rec.turns) == 3 and rec.subagents == ["abc123"]
+    assert "source" not in rec.transcript_bytes and rec.transcript_bytes["stored"] > 0
+
+
+def test_sweep_leaves_fresh_sessions_and_skips_while_another_runs(hook):
+    store = hook.store
+    run_session(hook, end=False)
+    worker.run("sweep", "", "", str(store.root))
+    assert read_session(store, "sess-cap1").ended_at is None
+    make_idle(store, "sess-cap1")
+    lock = store.state / "locks" / "sweep.lock"
+    lock.write_text("held\n")
+    worker.run("sweep", "", "", str(store.root))
+    assert read_session(store, "sess-cap1").ended_at is None
+    lock.unlink()
+    worker.run("sweep", "", "", str(store.root))
+    assert read_session(store, "sess-cap1").ended_by == "idle"
+
+
+def test_session_start_spawns_sweep_when_due(hook, monkeypatch):
+    store = hook.store
+    calls: list[list[str]] = []
+    monkeypatch.setattr(worker, "spawn_worker", lambda args, cwd, **kw: calls.append(args))
+    hook("SessionStart", "session_start")
+    assert [c[0] for c in calls] == ["sweep"]  # never swept yet
+    (store.state / "last_sweep").write_text(f"{datetime.now().timestamp()}\n")
+    calls.clear()
+    hook("SessionStart", "session_start")
+    assert calls == []
+    make_idle(store, "sess-cap1")
+    start_other(store)
+    assert [c[0] for c in calls] == ["sweep"]
+
+
+def age(store, sid: str, days: int) -> None:
+    rec = read_session(store, sid)
+    rec.started_at = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+    write_session(store, rec, Config())
+
+
+def test_old_session_is_pruned_and_stays_readable_through_the_branch(hook):
+    store = hook.store
+    run_session(hook)
+    [raw] = (store.raw / "sessions").glob("*-sess-cap1.jsonl")
+    sub = store.raw / "subagents" / "sess-cap1" / "abc123.jsonl"
+    content = raw.read_bytes()
+    tip = read_tip(store)
+    age(store, "sess-cap1", 200)
+    worker.run("sweep", "", "", str(store.root))
+
+    rel = [f"raw/sessions/{raw.name}", "raw/subagents/sess-cap1/abc123.jsonl"]
+    assert not raw.exists() and not sub.exists() and not sub.parent.exists()
+    assert sorted(json.loads((store.state / "pruned.json").read_text())) == sorted(rel)
+    assert read_tip(store) == tip and read_blob(store, rel[0]) == content
+    assert read_session(store, "sess-cap1").turns  # records stay
+    (store.state / "materialized.json").unlink(missing_ok=True)
+    assert materialize(store, load_config(store.root)) == 0
+    assert not raw.exists() and not sub.exists()
+    [line] = worker_lines(store, "worker:sweep")
+    assert sorted(line["pruned"]) == sorted(rel)
+    (store.state / "pruned.json").unlink()  # without the list, materialize writes them back
+    assert materialize(store, load_config(store.root)) == 2 and raw.read_bytes() == content
+
+
+def test_recent_and_active_sessions_are_not_pruned(hook):
+    store = hook.store
+    run_session(hook)
+    worker.run("sweep", "", "", str(store.root))
+    assert list((store.raw / "sessions").glob("*-sess-cap1.jsonl"))
+    age(store, "sess-cap1", 200)
+    hook("SessionStart", "session_start")  # resumed: active again
+    worker.run("sweep", "", "", str(store.root))
+    assert list((store.raw / "sessions").glob("*-sess-cap1.jsonl"))
+    assert not (store.state / "pruned.json").exists()
+
+
+def test_with_sync_on_only_copies_on_a_shared_tip_are_pruned(hook, git_repo):
+    store = hook.store
+    (git_repo / ".wscontext").mkdir()
+    (git_repo / ".wscontext" / "config.toml").write_text('[sync]\nremote = "origin"\n')
+    run_session(hook)
+    [raw] = (store.raw / "sessions").glob("*-sess-cap1.jsonl")
+    age(store, "sess-cap1", 200)
+    worker.run("sweep", "", "", str(store.root))
+    assert raw.exists()  # never pushed or fetched: not on any shared tip
+    subprocess.run(["git", "update-ref", "refs/wscontext/remotes/origin/history", read_tip(store)],
+                   cwd=git_repo, check=True)
+    worker.run("sweep", "", "", str(store.root))
+    assert not raw.exists()
+
+
+def test_a_local_copy_that_differs_from_the_branch_is_not_pruned(hook):
+    store = hook.store
+    run_session(hook)
+    [raw] = (store.raw / "sessions").glob("*-sess-cap1.jsonl")
+    raw.write_bytes(raw.read_bytes() + b'{"type":"user","message":{"content":"later"}}\n')
+    age(store, "sess-cap1", 200)
+    worker.run("sweep", "", "", str(store.root))
+    assert raw.exists()

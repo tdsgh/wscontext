@@ -2,6 +2,7 @@
 by contract, so only the `version` field of known major versions is trusted."""
 
 import json
+import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
@@ -28,6 +29,22 @@ BOOKKEEPING_ATTACHMENTS = frozenset({
 META_ATTACHMENTS = frozenset({"queued_command", "file", "edited_text_file",
                               "hook_additional_context"})
 TITLE_TYPES = frozenset({"ai-title", "summary"})
+
+# The stored shape (build plan WP1 gate). A field not named here is kept.
+# Keep once: stored on the first line that carries the field and again when its value changes.
+KEEP_ONCE = ("sessionId", "cwd", "gitBranch", "version", "entrypoint", "userType", "slug",
+             "requestedModel", "advisorModel", "effort", "perTurnEffort", "thinkingDisplay",
+             "permissionMode")
+REDUCED_KINDS = frozenset({"prompt", "reply", "tool_result", "meta", "compaction"})
+DROPPED_FIELDS = {
+    "reply": ("wireToolInputs", "serverClassifierRequest", "requestRef", "requestId",
+              "wireIngestContext"),
+    "tool_result": ("serverClassifierContext", "permissionDecision", "sourceToolAssistantUUID"),
+    "meta": ("rendered", "renderedInHumanTurn", "renderedRole"),
+}
+DROPPED_ORIGIN_KEYS = ("body", "handbackReportText")  # on meta lines
+CUT_MARK = "\n[wscontext: tool result cut at {kept} of {total} characters]"
+_CUT_MARK = re.compile(r"\n\[wscontext: tool result cut at \d+ of \d+ characters\]\Z")
 
 
 def _loads(line: str) -> dict | None:
@@ -136,6 +153,120 @@ def measure(path: Path, sidechain: bool = False) -> dict[str, int]:
                                separators=(",", ":")).encode()) - 2
             sizes[f"{kind}.{key}"] = sizes.get(f"{kind}.{key}", 0) + n
     return sizes
+
+
+def _cut(block: dict, max_chars: int) -> bool:
+    """Cut a tool_result block's text to `max_chars`, ending it with a visible mark."""
+    content = block.get("content")
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        texts = [b for b in content if isinstance(b, dict) and isinstance(b.get("text"), str)]
+        text = "\n".join(b["text"] for b in texts)
+    else:
+        return False
+    if len(text) <= max_chars or _CUT_MARK.search(text):
+        return False
+    kept = text[:max_chars] + CUT_MARK.format(kept=max_chars, total=len(text))
+    if isinstance(content, str):
+        block["content"] = kept
+    else:
+        # the text blocks become one, where the first was; other blocks stay in place
+        first = texts[0]
+        block["content"] = [{**b, "text": kept} if b is first else b
+                            for b in content if b is first or b not in texts]
+    return True
+
+
+def _reduce_entry(obj: dict, kind: str, max_chars: int) -> bool:
+    """Drop the fields the stored shape leaves out of one line of `kind`; True when it changed."""
+    changed = False
+    for key in DROPPED_FIELDS.get(kind, ()):
+        if key in obj:
+            del obj[key]
+            changed = True
+    message = obj.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    blocks = [b for b in content if isinstance(b, dict)] if isinstance(content, list) else []
+    if kind == "reply":
+        for block in blocks:
+            if block.get("type") == "thinking" and "signature" in block:
+                del block["signature"]
+                changed = True
+        usage = message.get("usage") if isinstance(message, dict) else None
+        if isinstance(usage, dict) and set(usage) - set(TOKEN_KEYS):
+            message["usage"] = {k: v for k, v in usage.items() if k in TOKEN_KEYS}
+            changed = True
+    elif kind == "tool_result":
+        if "toolUseResult" in obj:
+            result = obj["toolUseResult"]
+            # The adapter reads only `agentId` here. An object is kept, even empty, on a line
+            # with its own `agentId`: without it the line's own id would be read instead.
+            if isinstance(result, dict) and ("agentId" in result or "agentId" in obj):
+                slim = {"agentId": result["agentId"]} if "agentId" in result else {}
+                if slim != result:
+                    obj["toolUseResult"] = slim
+                    changed = True
+            else:
+                del obj["toolUseResult"]
+                changed = True
+        if max_chars:
+            for block in blocks:
+                if block.get("type") == "tool_result" and _cut(block, max_chars):
+                    changed = True
+    elif kind == "meta":
+        origin = obj.get("origin")
+        for key in DROPPED_ORIGIN_KEYS if isinstance(origin, dict) else ():
+            if key in origin:
+                del origin[key]
+                changed = True
+    return changed
+
+
+def reduce(data: bytes, tool_result_max_chars: int = 0) -> bytes:
+    """The stored shape of a transcript, line by line: bookkeeping and repeated titles go,
+    named fields go, keep-once fields stay where they first appear or change. Each tool
+    result's text is cut at `tool_result_max_chars` unless it is 0. Unparseable lines,
+    unknown kinds and unnamed fields pass through; unchanged lines keep their bytes.
+
+    Parsing the result gives the same turns, items, tokens and subagents as the original.
+    Each output line depends only on the lines before it, so a prefix of a transcript
+    reduces to a prefix of its reduced copy. Sidechain lines are reduced by their shape."""
+    out: list[bytes] = []
+    stored: dict[str, object] = {}  # keep-once field -> the value last written
+    titles: dict[object, dict] = {}  # title line type -> the title line last written
+    for line in data.splitlines(keepends=True):
+        body = line.rstrip(b"\r\n")
+        try:
+            obj = json.loads(body)
+        except ValueError:
+            obj = None
+        if not isinstance(obj, dict):
+            out.append(line)
+            continue
+        kind = entry_kind(obj, sidechain=True)
+        changed = False
+        if kind == "bookkeeping":
+            continue
+        if kind == "title":
+            title = {k: v for k, v in obj.items() if k not in KEEP_ONCE}
+            if titles.get(obj["type"]) == title:
+                continue
+            titles[obj["type"]] = title
+        elif kind in REDUCED_KINDS:
+            changed = _reduce_entry(obj, kind, tool_result_max_chars)
+            for key in KEEP_ONCE:
+                if key in obj and key in stored and stored[key] == obj[key]:
+                    del obj[key]
+                    changed = True
+        for key in KEEP_ONCE:
+            if key in obj:
+                stored[key] = obj[key]
+        if changed:
+            line = json.dumps(obj, ensure_ascii=False,
+                              separators=(",", ":")).encode() + line[len(body):]
+        out.append(line)
+    return b"".join(out)
 
 
 class ClaudeCodeAdapter:

@@ -3,10 +3,10 @@
 import os
 import re
 import time
-from datetime import datetime
 from pathlib import Path
 
-from wscontext.capture.state import active_path, git_value, read_json, turn_state_path, worktree_key
+from wscontext.capture.state import (active_path, git_value, last_activity, parse_time,
+                                     read_json, worktree_key)
 from wscontext.capture.worker import spawn_worker
 from wscontext.config import Config
 from wscontext.gitutil import git
@@ -25,13 +25,6 @@ def spawn(store: StorePaths, *args: str) -> None:
     spawn_worker([args[0], str(store.root), *args[1:]], store.root, module=WORKER)
 
 
-def _timestamp(value) -> float:
-    try:
-        return datetime.fromisoformat(value).timestamp()
-    except (TypeError, ValueError):
-        return 0.0
-
-
 def active_sessions(store: StorePaths, config: Config) -> list[str]:
     """Sessions active in this worktree with activity inside the staleness window, oldest first."""
     sessions = read_json(active_path(store)).get(worktree_key(store, config))
@@ -40,16 +33,8 @@ def active_sessions(store: StorePaths, config: Config) -> list[str]:
     cutoff = time.time() - config.capture.stale_session_minutes * 60
     fresh = []
     for sid, started in sessions.items():
-        if not is_safe_name(sid):
-            continue
-        last = _timestamp(started)
-        try:
-            # every prompt and tool call rewrites the turn state
-            last = max(last, turn_state_path(store, sid).stat().st_mtime)
-        except OSError:
-            pass
-        if last >= cutoff:
-            fresh.append((_timestamp(started), sid))
+        if is_safe_name(sid) and last_activity(store, sid, started) >= cutoff:
+            fresh.append((parse_time(started), sid))
     return [sid for _, sid in sorted(fresh)]
 
 
