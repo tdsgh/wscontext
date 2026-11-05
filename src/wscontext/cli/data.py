@@ -1,11 +1,15 @@
 """What the read commands share: session lookup, transcript turns and `--since` values."""
 
 import re
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from wscontext.adapters.base import Item
 from wscontext.adapters.claude_code import ClaudeCodeAdapter
+from wscontext.gitutil import GitError
+from wscontext.history.branch import ls_blobs, read_blob, read_tip
 from wscontext.store.paths import StorePaths, is_safe_name
 from wscontext.store.records import RecordError, SessionRecord, read_session
 
@@ -45,6 +49,21 @@ def parse_since(text: str, now: datetime | None = None) -> datetime:
     return parsed
 
 
+def repo_path(store: StorePaths, path: str) -> str:
+    """A path given relative to the working directory, as repo-relative POSIX."""
+    try:
+        return (Path.cwd() / path).resolve().relative_to(store.root.resolve()).as_posix()
+    except ValueError:
+        return path
+
+
+def session_status(record: SessionRecord) -> str:
+    """`running`, `finished` or `finalized-idle`."""
+    if record.ended_at is None:
+        return "running"
+    return "finalized-idle" if record.ended_by == "idle" else "finished"
+
+
 def list_sessions(store: StorePaths) -> list[SessionRecord]:
     """Every readable session record, newest start first."""
     found = []
@@ -78,10 +97,24 @@ def transcript_turns(store: StorePaths, record: SessionRecord) -> list[TurnView]
     """
     sid = record.session_id
     raw = sorted((store.raw / "sessions").glob(f"????-??-??-{sid}.jsonl"))
+    parsed = None
     if raw:
         parsed = ClaudeCodeAdapter().parse(raw[0])
-        if parsed.supported and parsed.turns:
-            return [TurnView(t.index, t.started_at, t.prompt, t.tool_calls, t.tokens, t.items)
-                    for t in parsed.turns]
+    else:  # pruned from raw/: the history branch still holds the copy
+        tip = read_tip(store)
+        name = re.compile(rf"raw/sessions/\d{{4}}-\d\d-\d\d-{re.escape(sid)}\.jsonl")
+        try:
+            paths = sorted(p for p in (ls_blobs(store, tip) if tip else ()) if name.fullmatch(p))
+        except GitError:
+            paths = []
+        data = read_blob(store, paths[-1]) if paths else None
+        if data is not None:
+            with tempfile.TemporaryDirectory() as tmp:
+                copy = Path(tmp) / "t.jsonl"
+                copy.write_bytes(data)
+                parsed = ClaudeCodeAdapter().parse(copy)
+    if parsed is not None and parsed.supported and parsed.turns:
+        return [TurnView(t.index, t.started_at, t.prompt, t.tool_calls, t.tokens, t.items)
+                for t in parsed.turns]
     return [TurnView(t.index, t.started_at or None, None, t.tool_calls, t.tokens)
             for t in record.turns]

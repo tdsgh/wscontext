@@ -63,7 +63,7 @@ def run(args, store: StorePaths, config: Config) -> Reply:
         return error(
             f"session {sid} is already on the shared history ({len(pushed)} of its "
             f"{len(paths)} paths are on a remote). Forgetting it needs an explicit rewrite of "
-            "the shared wscontext/history branch and a force-push, and every teammate has to "
+            "the shared refs/wscontext/history ref and a force-push, and every teammate has to "
             "re-fetch it. ctx forget does not do that.", args.json, shared=True, paths=pushed)
     links = []
     for path in sorted((store.records / "checkpoints").glob("*.json")):

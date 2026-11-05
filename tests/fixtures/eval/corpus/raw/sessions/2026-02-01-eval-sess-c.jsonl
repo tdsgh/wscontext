@@ -1,0 +1,2 @@
+{"type": "user", "version": "2.1.314", "timestamp": "2026-02-01T09:00:00Z", "message": {"role": "user", "content": [{"type": "text", "text": "tune the sqlite pragma for faster checkpoints"}]}}
+{"type": "assistant", "version": "2.1.314", "timestamp": "2026-02-01T09:00:00Z", "message": {"id": "m0", "role": "assistant", "content": [{"type": "text", "text": "Set journal mode to WAL and synchronous to normal."}, {"type": "tool_use", "id": "t0", "name": "Bash", "input": {"command": "sqlite3 db pragma"}}]}}

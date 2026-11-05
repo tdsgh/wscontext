@@ -1,0 +1,2 @@
+{"type": "user", "version": "2.1.314", "timestamp": "2026-02-01T09:00:00Z", "message": {"role": "user", "content": [{"type": "text", "text": "why does the retry loop back off exponentially"}]}}
+{"type": "assistant", "version": "2.1.314", "timestamp": "2026-02-01T09:00:00Z", "message": {"id": "m0", "role": "assistant", "content": [{"type": "text", "text": "The fetcher doubles its delay after each timeout."}, {"type": "tool_use", "id": "t0", "name": "Bash", "input": {"command": "grep backoff fetcher.py"}}]}}

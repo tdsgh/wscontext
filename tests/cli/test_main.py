@@ -46,7 +46,8 @@ def test_internal_commands_are_wired_to_their_modules(monkeypatch):
 
 def test_command_table():
     assert set(ctx_main.COMMANDS) == {"why", "sessions", "show", "forget", "stats", "init", "doctor",
-                                      "uninstall", "sync"}
+                                      "uninstall", "sync", "find", "brief", "rebuild",
+                                      "eval"}
 
 
 def test_a_command_imports_only_its_own_module(world):
@@ -128,7 +129,7 @@ def _set_remote(world):
 def test_read_commands_do_not_fetch_without_a_remote(world, capsys, spawned):
     for argv in (["why", "src/app.py:1"], ["sessions"], ["show", "sess-one"]):
         world.ctx(capsys, *argv)
-    assert spawned == []
+    assert {call[0] for call in spawned} == {"sweep"}  # no fetch
 
 
 def test_read_commands_start_the_fetch_worker_when_a_remote_is_set(world, capsys, spawned):
@@ -137,7 +138,8 @@ def test_read_commands_start_the_fetch_worker_when_a_remote_is_set(world, capsys
         spawned.clear()
         code, _, _ = world.ctx(capsys, *argv)
         assert code == 0
-        assert spawned == [["fetch", "ctx", "", str(world.store.root)]]
+        assert spawned == [["fetch", "ctx", "", str(world.store.root)],
+                           ["sweep", "", "", str(world.store.root)]]
 
 
 def test_internal_commands_never_start_a_fetch(world, monkeypatch, spawned):
@@ -170,7 +172,7 @@ def test_a_read_command_does_not_wait_for_the_fetch(world, capsys, spawned, monk
         code, out, _ = world.ctx(capsys, "sessions")
         elapsed = time.monotonic() - started
         assert code == 0 and "sess-one" in out
-        assert len(sleepers) == 1 and sleepers[0].poll() is None  # still running when we returned
+        assert len(sleepers) == 2 and all(p.poll() is None for p in sleepers)  # still running when we returned
         assert elapsed < 30
     finally:
         for proc in sleepers:

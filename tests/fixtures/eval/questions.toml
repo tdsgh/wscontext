@@ -1,0 +1,11 @@
+[[question]]
+text = "how does the fetcher back off after a timeout"
+expect = "eval-sess-a"
+
+[[question]]
+text = "what was the invoice exporter renamed to"
+expect = "eval-sess-b"
+
+[[question]]
+text = "which sqlite journal mode did we choose"
+expect = "eval-sess-c"

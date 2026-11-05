@@ -87,7 +87,7 @@ def test_data_reports_sync_status_and_starts_the_fetch(shared_remote, capsys, mo
     data = json.loads(capsys.readouterr().out)["results"][0]
     assert data["sync"] == {"sharing": True, "remote": "origin", "ahead": 1, "behind": 0,
                             "pending_sessions": 1}
-    assert [c[0] for c in spawned] == ["fetch"]
+    assert [c[0] for c in spawned] == ["fetch", "sweep"]
 
 
 def test_turns_view(world, capsys):

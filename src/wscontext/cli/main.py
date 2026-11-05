@@ -21,9 +21,17 @@ COMMANDS = {
     "doctor": "wscontext.cli.doctor",
     "uninstall": "wscontext.cli.uninstall",
     "sync": "wscontext.cli.sync",
+    "find": "wscontext.cli.find",
+    "brief": "wscontext.cli.brief",
+    "rebuild": "wscontext.cli.rebuild",
+    "eval": "wscontext.cli.eval",
 }
 # Read commands that start the throttled background fetch when a sync remote is set (ADR-008).
-FETCHING = {"why", "sessions", "show", "stats"}
+# They also spawn the `sweep` worker when a session is idle or the last sweep is a day old.
+FETCHING = {"why", "sessions", "show", "stats", "find", "brief"}
+# Commands that read history refs: an upgraded repository with no write since still has its
+# history under the stage-1 ref until this moves it.
+MIGRATING = {"forget", "sync", "stats", "sessions"}
 INTERNAL = {"hook", "worker", "git-hook"}
 # Options before the command name: the launcher's (kept for init and doctor), then the shared ones.
 LAUNCHER_OPTIONS = {"--plugin-root", "--plugin-data"}
@@ -66,12 +74,21 @@ def _log_call(store, config, argv: list[str], reply, started: float) -> None:
         pass
 
 
-def _start_fetch(store) -> None:
-    """Detached and unawaited; the worker applies the fetch throttle."""
+def _spawn(store, args: list[str]) -> None:
+    """Detached and unawaited; the worker applies its own throttle."""
     from wscontext.capture import worker
     try:
-        worker.spawn_worker(["fetch", "ctx", "", str(store.root)], store.root)
+        worker.spawn_worker(args, store.root)
     except OSError:
+        pass
+
+
+def _migrate(store) -> None:
+    from wscontext.gitutil import GitError
+    from wscontext.history.branch import migrate_legacy
+    try:
+        migrate_legacy(store)
+    except (GitError, OSError):
         pass
 
 
@@ -119,7 +136,13 @@ def main(argv: list[str] | None = None) -> int:
     else:
         config = load_config(store.root)
         if name in FETCHING and config.sync.remote:
-            _start_fetch(store)
+            _spawn(store, ["fetch", "ctx", "", str(store.root)])
+        if name in FETCHING:
+            from wscontext.capture.state import sweep_due
+            if sweep_due(store, config):
+                _spawn(store, ["sweep", "", "", str(store.root)])
+        if name in MIGRATING:
+            _migrate(store)
         reply = module.run(args, store, config)
     # Errors go to stderr, except as JSON, which a caller parses from stdout.
     print(reply.text, file=sys.stderr if reply.code and not (args.json or reply.report) else sys.stdout)

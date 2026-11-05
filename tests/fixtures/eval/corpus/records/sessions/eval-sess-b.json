@@ -1,0 +1,25 @@
+{
+  "agent": "claude-code",
+  "author": "eval@example.com",
+  "branch": "main",
+  "brief_tokens": null,
+  "ctx_calls": {},
+  "ended_at": "2026-02-01T10:00:00Z",
+  "ended_by": "session-end",
+  "files_touched": [],
+  "head_end": null,
+  "head_start": null,
+  "retrieval": null,
+  "schema_version": 2,
+  "session_id": "eval-sess-b",
+  "started_at": "2026-02-01T09:00:00Z",
+  "subagents": [],
+  "tokens": null,
+  "tool_calls": {},
+  "transcript_bytes": {
+    "source": 1000,
+    "stored": 250
+  },
+  "turns": [],
+  "worktree": null
+}

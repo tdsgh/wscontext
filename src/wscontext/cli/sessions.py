@@ -1,8 +1,7 @@
 """`ctx sessions`: captured sessions, filtered by branch, author, date or file."""
 
-from pathlib import Path
-
-from wscontext.cli.data import list_sessions, parse_since, parse_time
+from wscontext.cli.data import (list_sessions, parse_since, parse_time, repo_path,
+                                 session_status)
 from wscontext.cli.output import Block, Reply, error, render
 from wscontext.config import Config
 from wscontext.history import sync
@@ -11,6 +10,8 @@ from wscontext.store.records import SessionRecord
 
 DEFAULT_LIMIT = 20
 FILES_SHOWN = 5
+STATUS_TEXT = {"running": "running", "finished": "finished",
+               "finalized-idle": "finalized after going idle"}
 
 
 def add_arguments(parser) -> None:
@@ -22,20 +23,14 @@ def add_arguments(parser) -> None:
                         help="only sessions the next share would send")
 
 
-def _repo_path(store: StorePaths, path: str) -> str:
-    try:
-        return (Path.cwd() / path).resolve().relative_to(store.root.resolve()).as_posix()
-    except ValueError:
-        return path
-
-
 def _block(rec: SessionRecord, pending: bool | None) -> Block:
     tools = ", ".join(f"{k} {n}" for k, n in sorted(rec.tool_calls.items()))
+    status = session_status(rec)
     files = rec.files_touched
     shown = ", ".join(files[:FILES_SHOWN]) + (f" (+{len(files) - FILES_SHOWN})"
                                               if len(files) > FILES_SHOWN else "")
     body = [f"{len(rec.turns)} turns" + (f"; tools: {tools}" if tools else "")
-            + ("" if rec.ended_at else "; still open or not ended cleanly")]
+            + f"; {STATUS_TEXT[status]}"]
     if files:
         body.append(f"files: {shown}")
     if pending:
@@ -44,7 +39,7 @@ def _block(rec: SessionRecord, pending: bool | None) -> Block:
                  f"{rec.branch or 'unknown branch'} by {rec.author}",
                  (rec.started_at or "")[:10] or None, body, [f"ctx show {rec.session_id}"],
                  {"author": rec.author, "branch": rec.branch, "started_at": rec.started_at,
-                  "ended_at": rec.ended_at, "turns": len(rec.turns),
+                  "ended_at": rec.ended_at, "status": status, "turns": len(rec.turns),
                   "tool_calls": rec.tool_calls, "ctx_calls": rec.ctx_calls,
                   "files_touched": files, "pending": pending})
 
@@ -62,7 +57,7 @@ def run(args, store: StorePaths, config: Config) -> Reply:
             return error(str(e), args.json)
         found = [r for r in found if (parse_time(r.started_at) or since) >= since]
     if args.file:
-        want = _repo_path(store, args.file)
+        want = repo_path(store, args.file)
         found = [r for r in found if want in r.files_touched]
     shared = config.sync.remote is not None
     pending = set(sync.pending(store, config))
