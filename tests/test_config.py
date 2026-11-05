@@ -47,3 +47,24 @@ def test_capture_and_log_settings(tmp_path):
     (d / "config.toml").write_text('[capture]\nprecompact_snapshot = false\n[logs]\nmax_bytes = 10\n')
     cfg = load_config(tmp_path)
     assert cfg.capture.precompact_snapshot is False and cfg.logs.max_bytes == 10
+
+
+def test_stage2_defaults():
+    cfg = Config()
+    assert cfg.capture.precompact_snapshot is False and cfg.capture.tool_result_max_chars == 0
+    assert cfg.retrieval.enabled is True and cfg.retrieval.brief is True
+    assert cfg.store.session_warn_bytes == 10 * 1024 ** 2
+    assert cfg.store.store_warn_bytes == 1024 ** 3
+
+
+def test_retrieval_store_and_capture_overrides(tmp_path):
+    d = tmp_path / ".wscontext"
+    d.mkdir()
+    (d / "config.toml").write_text(
+        '[retrieval]\nenabled = false\nbrief = false\n'
+        '[store]\nsession_warn_bytes = 5\nstore_warn_bytes = 50\n'
+        '[capture]\nprecompact_snapshot = true\ntool_result_max_chars = 8000\n')
+    cfg = load_config(tmp_path)
+    assert cfg.retrieval.enabled is False and cfg.retrieval.brief is False
+    assert cfg.store.session_warn_bytes == 5 and cfg.store.store_warn_bytes == 50
+    assert cfg.capture.precompact_snapshot is True and cfg.capture.tool_result_max_chars == 8000

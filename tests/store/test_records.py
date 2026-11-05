@@ -40,7 +40,7 @@ def test_session_round_trip(store):
     assert back == rec
     assert isinstance(back.turns[0], TurnRecord)
     data = json.loads(path.read_text(encoding="utf-8"))
-    assert data["schema_version"] == 1 and data["author"] == "Test <t@example.com>"
+    assert data["schema_version"] == 2 and data["author"] == "Test <t@example.com>"
     assert data["turns"][0]["schema_version"] == 1
 
 
@@ -71,7 +71,7 @@ def test_minimal_earlier_record_reads_with_defaults(tmp_path):
     assert rec.session_id == "s-9" and rec.turns == [] and rec.tokens is None
 
 
-@pytest.mark.parametrize("version", [2, 0, None, "1"])
+@pytest.mark.parametrize("version", [3, 0, None, "1"])
 def test_unsupported_schema_version_is_rejected(tmp_path, version):
     p = tmp_path / "s.json"
     p.write_text(json.dumps({"schema_version": version, "session_id": "s", "author": "x"}))
@@ -157,3 +157,25 @@ def test_state_file_never_stores_a_secret(store):
     state = read_json(path)
     assert state["files"] == ["src/[REDACTED:github-token].py"] and state["count"] == 3
     assert not list(path.parent.glob("*.tmp"))
+
+
+def test_schema_1_session_reads_new_fields_as_none_and_rewrites_as_schema_2(store):
+    path = store.records / "sessions" / "s-1.json"
+    path.parent.mkdir(parents=True)
+    path.write_text('{"schema_version": 1, "session_id": "s-1", "author": "x", "ended_at": "t"}')
+    rec = read_session(store, "s-1")
+    assert rec.schema_version == 1 and rec.ended_at == "t"
+    assert (rec.ended_by, rec.retrieval, rec.brief_tokens, rec.transcript_bytes) == (None,) * 4
+    rec.ended_by = "idle"
+    write_session(store, rec, Config())
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["schema_version"] == 2 and data["ended_by"] == "idle"
+    assert {"retrieval", "brief_tokens", "transcript_bytes"} <= set(data)
+
+
+def test_schema_2_session_round_trip(store):
+    rec = SessionRecord(session_id="s-2", author="x", ended_by="session-end", retrieval=False,
+                        brief_tokens=312,
+                        transcript_bytes={"source": 1000, "stored": 220, "reply": 120})
+    write_session(store, rec, Config())
+    assert read_session(store, "s-2") == rec

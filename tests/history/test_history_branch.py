@@ -1,11 +1,14 @@
 import logging
+import subprocess
 import threading
 
 import pytest
 from conftest import branch_blob, put_store_file, run_git
 
-from wscontext.history.branch import (HISTORY_REF, commit_paths, merge_into_local, read_tip,
-                                      remove_paths, union_merge)
+from wscontext.history import branch
+from wscontext.history.branch import (HISTORY_REF, LEGACY_REF, commit_paths, merge_into_local,
+                                      migrate_legacy, read_blob, read_tip, remove_paths,
+                                      squash_unshared, union_merge)
 from wscontext.store.paths import StorePaths
 
 SESSION = "records/sessions/s-1.json"
@@ -137,7 +140,7 @@ def _diverge(shared_remote, a_rel, a_data, b_rel, b_data):
     a_tip = commit_paths(sa, [put_store_file(sa.local, a_rel, a_data)], "a")
     run_git(a, "push", "-q", "origin", f"{HISTORY_REF}:{HISTORY_REF}")
     b_tip = commit_paths(sb, [put_store_file(sb.local, b_rel, b_data)], "b")
-    run_git(b, "fetch", "-q", "origin")
+    run_git(b, "fetch", "-q", "origin", f"+{HISTORY_REF}:refs/remotes/origin/wscontext/history")
     remote = run_git(b, "rev-parse", "refs/remotes/origin/wscontext/history").strip()
     assert remote == a_tip
     return sb, b, b_tip, a_tip
@@ -176,3 +179,124 @@ def test_merge_fast_forwards_when_one_side_contains_the_other(git_repo):
     assert union_merge(store, first, second) == second
     assert union_merge(store, second, first) == second
     assert union_merge(store, second, second) == second
+
+
+def _to_legacy(repo) -> str:
+    """Move the local history to where stage 1 kept it; returns its tip."""
+    tip = run_git(repo, "rev-parse", HISTORY_REF).strip()
+    run_git(repo, "update-ref", LEGACY_REF, tip)
+    run_git(repo, "update-ref", "-d", HISTORY_REF, tip)
+    return tip
+
+
+def _stage1_commit(store, rel: str) -> str:
+    """What a stage-1 writer does: commit one file on top of `LEGACY_REF` by CAS."""
+    blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=store.root, check=True,
+                          input=rel.encode(), capture_output=True).stdout.decode().strip()
+    while True:
+        old = read_tip(store, LEGACY_REF)
+        base = run_git(store.root, "rev-parse", f"{old}^{{tree}}").strip() if old else None
+        tree = branch._write_tree(store, base, {rel: ("100644", blob)})
+        new = branch._commit(store, tree, [old] if old else [], f"stage 1 {rel}")
+        try:
+            run_git(store.root, "update-ref", LEGACY_REF, new, old or "0" * 40)
+            return new
+        except subprocess.CalledProcessError:
+            continue
+
+
+def test_a_writer_moves_the_legacy_ref_first(git_repo):
+    store = StorePaths.resolve(git_repo)
+    legacy = commit_paths(store, [put_store_file(store.local, SESSION, b"old\n")], "stage 1")
+    _to_legacy(git_repo)
+    assert read_tip(store) is None
+    tip = commit_paths(store, [put_store_file(store.local, RAW, b"new\n")], "stage 2")
+    assert _parents(git_repo, tip) == [legacy]
+    assert _tree(git_repo) == {SESSION, RAW}
+    assert run_git(git_repo, "for-each-ref", LEGACY_REF) == ""
+    assert run_git(git_repo, "branch", "--list") == "* main\n"
+
+
+def test_migration_merges_a_diverged_legacy_ref(git_repo):
+    store = StorePaths.resolve(git_repo)
+    ours = commit_paths(store, [put_store_file(store.local, SESSION, b"ours\n")], "stage 2")
+    theirs = _stage1_commit(store, "records/sessions/s-old.json")
+    assert migrate_legacy(store) is True
+    assert _parents(git_repo) == [ours, theirs]
+    assert _tree(git_repo) == {SESSION, "records/sessions/s-old.json"}
+    assert read_tip(store, LEGACY_REF) is None
+    assert migrate_legacy(store) is False
+
+
+@pytest.mark.parametrize("entry", ["merge_into_local", "squash_unshared"])
+def test_every_writer_entry_point_migrates(git_repo, entry):
+    store = StorePaths.resolve(git_repo)
+    first = commit_paths(store, [put_store_file(store.local, SESSION, b"1\n")], "1")
+    _stage1_commit(store, "records/sessions/s-old.json")
+    if entry == "merge_into_local":
+        merge_into_local(store, first)
+    else:
+        squash_unshared(store, [])
+    assert read_tip(store, LEGACY_REF) is None
+    assert _tree(git_repo) == {SESSION, "records/sessions/s-old.json"}
+
+
+def test_migration_under_concurrent_writers(git_repo):
+    """Stage-2 writers, explicit migrations and a stage-1 writer that keeps recreating the
+    legacy ref all race; after a last migration every file is on the history ref."""
+    store = StorePaths.resolve(git_repo)
+    for n in range(3):
+        _stage1_commit(store, f"records/sessions/old-{n}.json")
+    writers, rounds = 4, 3
+    barrier = threading.Barrier(writers + 2)
+    errors = []
+
+    def stage2(n):
+        try:
+            barrier.wait()
+            for r in range(rounds):
+                p = put_store_file(store.local, f"records/sessions/w{n}-{r}.json", b"{}\n")
+                commit_paths(store, [p], f"writer {n} round {r}")
+        except Exception as e:  # surfaced below
+            errors.append(e)
+
+    def stage1():
+        try:
+            barrier.wait()
+            for r in range(rounds):
+                _stage1_commit(store, f"records/sessions/late-{r}.json")
+        except Exception as e:
+            errors.append(e)
+
+    def migrator():
+        try:
+            barrier.wait()
+            for _ in range(rounds):
+                migrate_legacy(store)
+        except Exception as e:
+            errors.append(e)
+
+    threads = [threading.Thread(target=stage2, args=(n,)) for n in range(writers)]
+    threads += [threading.Thread(target=stage1), threading.Thread(target=migrator)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    migrate_legacy(store)
+    expected = {f"records/sessions/w{n}-{r}.json" for n in range(writers) for r in range(rounds)}
+    expected |= {f"records/sessions/old-{n}.json" for n in range(3)}
+    expected |= {f"records/sessions/late-{r}.json" for r in range(rounds)}
+    assert _tree(git_repo) == expected
+    assert read_tip(store, LEGACY_REF) is None
+
+
+def test_read_blob(git_repo):
+    store = StorePaths.resolve(git_repo)
+    assert read_blob(store, RAW) is None
+    path = put_store_file(store.local, RAW, b"one\r\ntwo\n")
+    commit_paths(store, [path], "raw")
+    path.unlink()
+    assert read_blob(store, RAW) == b"one\r\ntwo\n"
+    assert read_blob(store, "raw/sessions/missing.jsonl") is None
+    assert read_blob(store, "raw") is None  # a tree, not a file

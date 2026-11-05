@@ -1,5 +1,6 @@
-"""The `wscontext/history` orphan branch, written with plumbing only.
+"""The shared history at `refs/wscontext/history`, written with plumbing only.
 
+The ref sits outside `refs/heads/`, so a plain clone or fetch never downloads it.
 Never touches the working tree, the index or `HEAD`. Every ref update is a
 compare-and-swap against the tip the new commit was built on.
 """
@@ -9,12 +10,14 @@ import random
 import time
 from pathlib import Path
 
-from wscontext.gitutil import GitError, git
+from wscontext.gitutil import GitError, git, git_bytes
 from wscontext.store.paths import StorePaths, is_safe_name
 
 log = logging.getLogger(__name__)
 
-HISTORY_REF = "refs/heads/wscontext/history"
+HISTORY_REF = "refs/wscontext/history"
+# where stage 1 kept the history; every writer moves it into HISTORY_REF first
+LEGACY_REF = "refs/heads/wscontext/history"
 SYNCED_DIRS = ("raw", "records")
 CAS_ATTEMPTS = 30
 
@@ -38,6 +41,14 @@ def cas_update(store: StorePaths, new: str, old: str | None, message: str) -> bo
     except GitError as e:
         log.debug("history ref CAS failed: %s", e)
         return False
+
+
+def read_blob(store: StorePaths, path: str) -> bytes | None:
+    """A file's content on the local tip, or None when there is no tip or no such file."""
+    try:
+        return git_bytes("cat-file", "blob", f"{HISTORY_REF}:{path}", cwd=store.root)
+    except GitError:
+        return None
 
 
 def branch_path(store: StorePaths, local: Path) -> str:
@@ -111,6 +122,7 @@ def _commit(store: StorePaths, tree: str, parents: list[str], message: str) -> s
 
 def _apply(store: StorePaths, changes: Changes, message: str) -> str | None:
     """Commit `changes` on top of the current tip, retrying until the CAS lands."""
+    migrate_legacy(store)
     for attempt in range(CAS_ATTEMPTS):
         tip = read_tip(store)
         base = git("rev-parse", f"{tip}^{{tree}}", cwd=store.root).strip() if tip else None
@@ -156,13 +168,14 @@ def squash_unshared(store: StorePaths, shared: list[str],
     remote already has changes, and blobs that only earlier local commits held are no
     longer reachable from the branch. Returns the new tip.
     """
+    migrate_legacy(store)
     for attempt in range(CAS_ATTEMPTS):
         tip = read_tip(store)
         if tip is None:
             return None
-        parents = [t for t in dict.fromkeys(shared) if _is_ancestor(store, t, tip)]
+        parents = [t for t in dict.fromkeys(shared) if is_ancestor(store, t, tip)]
         parents = [p for p in parents
-                   if not any(q != p and _is_ancestor(store, p, q) for q in parents)]
+                   if not any(q != p and is_ancestor(store, p, q) for q in parents)]
         if parents == [tip]:
             return tip
         tree = git("rev-parse", f"{tip}^{{tree}}", cwd=store.root).strip()
@@ -173,7 +186,7 @@ def squash_unshared(store: StorePaths, shared: list[str],
     raise GitError(("update-ref", HISTORY_REF), 1, "compare-and-swap kept failing")
 
 
-def _is_ancestor(store: StorePaths, a: str, b: str) -> bool:
+def is_ancestor(store: StorePaths, a: str, b: str) -> bool:
     try:
         git("merge-base", "--is-ancestor", a, b, cwd=store.root)
         return True
@@ -190,9 +203,9 @@ def union_merge(store: StorePaths, local: str | None, remote: str) -> str:
     commit; where both sides hold different blobs at one path, the larger blob
     wins (ties go to the larger SHA, so every host picks the same one).
     """
-    if local is None or local == remote or _is_ancestor(store, local, remote):
+    if local is None or local == remote or is_ancestor(store, local, remote):
         return remote
-    if _is_ancestor(store, remote, local):
+    if is_ancestor(store, remote, local):
         return local
     ours = ls_blobs(store, local)
     changes: Changes = {}
@@ -213,10 +226,34 @@ def union_merge(store: StorePaths, local: str | None, remote: str) -> str:
 
 def merge_into_local(store: StorePaths, remote: str) -> str:
     """Union-merge `remote` into the local history ref; returns the new local tip."""
+    migrate_legacy(store)
     for attempt in range(CAS_ATTEMPTS):
         local = read_tip(store)
         merged = union_merge(store, local, remote)
         if merged == local or cas_update(store, merged, local, "wscontext: merge remote history"):
             return merged
+        time.sleep(random.uniform(0, 0.005 * (attempt + 1)))
+    raise GitError(("update-ref", HISTORY_REF), 1, "compare-and-swap kept failing")
+
+
+def migrate_legacy(store: StorePaths) -> bool:
+    """Move a local `LEGACY_REF` into `HISTORY_REF`: union-merge it, then delete it.
+
+    Both steps are compare-and-swap, so concurrent writers and migrations lose nothing.
+    Returns True when this call deleted the legacy ref.
+    """
+    for attempt in range(CAS_ATTEMPTS):
+        legacy = read_tip(store, LEGACY_REF)
+        if legacy is None:
+            return False
+        tip = read_tip(store)
+        merged = union_merge(store, tip, legacy)
+        if merged == tip or cas_update(store, merged, tip, "wscontext: move history"):
+            try:
+                git("update-ref", "-d", LEGACY_REF, legacy, cwd=store.root)
+                log.info("moved local history from %s to %s", LEGACY_REF, HISTORY_REF)
+                return True
+            except GitError as e:
+                log.debug("legacy history ref CAS delete failed: %s", e)
         time.sleep(random.uniform(0, 0.005 * (attempt + 1)))
     raise GitError(("update-ref", HISTORY_REF), 1, "compare-and-swap kept failing")

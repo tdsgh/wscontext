@@ -12,8 +12,18 @@ fetch_throttle_seconds = 300
 time_budget_ms = 2000
 
 [capture]
-precompact_snapshot = true
+precompact_snapshot = false
 stale_session_minutes = 120
+# 0 keeps tool results whole; N cuts each at N characters
+tool_result_max_chars = 0
 
 [logs]
 max_bytes = 1048576
+
+[retrieval]
+enabled = true
+brief = true
+
+[store]
+session_warn_bytes = 10485760
+store_warn_bytes = 1073741824

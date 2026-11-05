@@ -4,7 +4,7 @@ from conftest import branch_blob, put_store_file, run_git, set_identity
 
 from wscontext.config import Config, RedactionConfig, SyncConfig
 from wscontext.history import sync
-from wscontext.history.branch import HISTORY_REF, commit_paths, read_tip
+from wscontext.history.branch import HISTORY_REF, LEGACY_REF, commit_paths, read_tip
 from wscontext.history.sync import SyncStatus, fetch, materialize, pending, push, status
 from wscontext.store.paths import StorePaths
 
@@ -232,7 +232,7 @@ def test_fetched_history_is_redacted_with_the_fetching_hosts_rules(shared_remote
     assert (sb.records / "sessions" / "s-a.json").read_bytes() == b"{}\n"
 
 
-def test_status_counts_commits_behind_after_a_plain_git_fetch(shared_remote):
+def test_status_counts_commits_behind_after_a_git_fetch_of_the_history_ref(shared_remote):
     _, a, b = shared_remote
     sa, sb = StorePaths.resolve(a), StorePaths.resolve(b)
     _record(sa, "s-1")
@@ -242,5 +242,144 @@ def test_status_counts_commits_behind_after_a_plain_git_fetch(shared_remote):
     _record(sa, "s-3")
     push(sa, ON)
     _record(sb, "s-4")
-    subprocess.run(["git", "fetch", "-q", "origin"], cwd=b, check=True)
+    subprocess.run(["git", "fetch", "-q", "origin",
+                    f"+{HISTORY_REF}:refs/remotes/origin/wscontext/history"], cwd=b, check=True)
     assert status(sb, ON) == SyncStatus("origin", 1, 2)
+
+
+def test_materialize_skips_pruned_paths(git_repo):
+    store = StorePaths.resolve(git_repo)
+    gone, _ = _branch_only(store, "raw/sessions/2026-11-03-s-1.jsonl", b"old\n", None)
+    kept, _ = _branch_only(store, "raw/sessions/2026-11-03-s-2.jsonl", b"new\n", None)
+    store.state.mkdir(parents=True, exist_ok=True)
+    (store.state / "pruned.json").write_text('["raw/sessions/2026-11-03-s-1.jsonl"]\n')
+    assert materialize(store, Config()) == 1
+    assert not gone.exists() and kept.read_bytes() == b"new\n"
+    # An object keyed by path reads the same; a later, longer blob stays pruned too.
+    (store.state / "pruned.json").write_text('{"raw/sessions/2026-11-03-s-1.jsonl": "x"}\n')
+    _branch_only(store, "raw/sessions/2026-11-03-s-1.jsonl", b"old\nolder\n", None)
+    assert materialize(store, Config()) == 0
+    assert not gone.exists()
+
+
+LEGACY_TRACKING = "refs/remotes/origin/wscontext/legacy-history"
+
+
+def _stage1_push(store, sid: str) -> str:
+    """A stage-1 clone: commit a session and push it to the remote's legacy branch.
+
+    The commit builds on any earlier legacy tip: `_record` moves it into `HISTORY_REF` first.
+    """
+    repo = store.root
+    tip = _record(store, sid)
+    run_git(repo, "update-ref", LEGACY_REF, tip)
+    run_git(repo, "update-ref", "-d", HISTORY_REF)
+    run_git(repo, "push", "-q", "--no-verify", "origin", f"{LEGACY_REF}:{LEGACY_REF}")
+    return tip
+
+
+def _refs(repo) -> str:
+    return run_git(repo, "for-each-ref", "--format=%(refname)")
+
+
+def test_clones_on_both_layouts_converge(shared_remote):
+    bare, a, b = shared_remote
+    sa, sb = StorePaths.resolve(a), StorePaths.resolve(b)
+    old = _stage1_push(sa, "s-a")
+    _record(sb, "s-b")
+    assert fetch(sb, ON) is True
+    assert (sb.records / "sessions" / "s-a.json").exists()
+    assert read_tip(sb, LEGACY_TRACKING) == old
+    assert push(sb, ON) is True
+    assert _remote_tip(bare) == read_tip(sb)
+    assert "refs/heads/wscontext/history" not in _refs(bare)
+    assert read_tip(sb, LEGACY_TRACKING) is None
+    # Clone a upgrades: its local legacy ref moves on its first fetch, then it converges.
+    assert fetch(sa, ON) is True
+    assert read_tip(sa, LEGACY_REF) is None
+    assert read_tip(sa) == _remote_tip(bare)
+    assert (sa.records / "sessions" / "s-b.json").exists()
+    _record(sa, "s-c")
+    assert push(sa, ON) is True
+    assert fetch(sb, ON) is True
+    assert read_tip(sb) == read_tip(sa) == _remote_tip(bare)
+
+
+def test_a_recreated_legacy_branch_is_merged_and_removed_again(shared_remote):
+    bare, a, b = shared_remote
+    sa, sb = StorePaths.resolve(a), StorePaths.resolve(b)
+    _record(sb, "s-b")
+    push(sb, ON)
+    _stage1_push(sa, "s-late")  # a stage-1 teammate pushes after the move
+    assert "refs/heads/wscontext/history" in _refs(bare)
+    assert fetch(sb, ON) is True and push(sb, ON) is True
+    assert "refs/heads/wscontext/history" not in _refs(bare)
+    assert run_git(bare, "cat-file", "-e", f"{HISTORY_REF}:records/sessions/s-late.json") == ""
+
+
+def test_push_removes_the_legacy_branch_only_when_contained(shared_remote):
+    bare, a, b = shared_remote
+    sa, sb = StorePaths.resolve(a), StorePaths.resolve(b)
+    old = _stage1_push(sa, "s-a")
+    _record(sb, "s-b")
+    # The legacy tip is known but not merged: the push leaves the branch alone.
+    run_git(b, "fetch", "-q", "origin", f"+{LEGACY_REF}:{LEGACY_TRACKING}")
+    assert push(sb, ON) is True
+    assert _remote_tip(bare) == read_tip(sb)
+    assert run_git(bare, "rev-parse", LEGACY_REF).strip() == old
+    assert read_tip(sb, LEGACY_TRACKING) == old
+    assert fetch(sb, ON) is True and push(sb, ON) is True
+    assert "refs/heads/wscontext/history" not in _refs(bare)
+
+
+def test_a_legacy_branch_moved_since_the_fetch_is_not_lost(shared_remote):
+    bare, a, b = shared_remote
+    sa, sb = StorePaths.resolve(a), StorePaths.resolve(b)
+    _stage1_push(sa, "s-a")
+    assert fetch(sb, ON) is True
+    _stage1_push(sa, "s-a2")  # moves the remote legacy branch past b's lease
+    _record(sb, "s-b")
+    assert push(sb, ON) is True  # rejected once, fetched, merged, pushed
+    assert "refs/heads/wscontext/history" not in _refs(bare)
+    for sid in ("s-a", "s-a2", "s-b"):
+        run_git(bare, "cat-file", "-e", f"{HISTORY_REF}:records/sessions/{sid}.json")
+
+
+def test_a_legacy_branch_removed_by_a_teammate_does_not_block_a_push(shared_remote):
+    bare, a, b = shared_remote
+    sa, sb = StorePaths.resolve(a), StorePaths.resolve(b)
+    _record(sa, "s-a")
+    run_git(a, "update-ref", LEGACY_REF, read_tip(sa))
+    run_git(a, "push", "-q", "--no-verify", "origin", f"{LEGACY_REF}:{LEGACY_REF}")
+    run_git(a, "update-ref", "-d", LEGACY_REF)
+    assert fetch(sb, ON) is True
+    assert fetch(sa, ON) is False  # a already holds it all; the tracking ref is set
+    assert read_tip(sa, LEGACY_TRACKING) is not None
+    assert push(sb, ON) is True  # removes the remote legacy branch
+    _record(sa, "s-a2")
+    assert push(sa, ON) is True  # its lease is stale: rejected once, fetch prunes, pushed
+    assert read_tip(sa, LEGACY_TRACKING) is None
+    assert "refs/heads/wscontext/history" not in _refs(bare)
+    assert _remote_tip(bare) == read_tip(sa)
+
+
+def test_shared_tips_include_the_legacy_tracking_ref(shared_remote):
+    _, a, _ = shared_remote
+    sa = StorePaths.resolve(a)
+    _stage1_push(sa, "s-a")
+    sb = StorePaths.resolve(shared_remote[2])
+    fetch(sb, ON)
+    assert sync.shared_tips(sb) == [read_tip(sb, LEGACY_TRACKING)]
+    assert "records/sessions/s-a.json" in sync.shared_paths(sb)
+
+
+def test_a_plain_clone_or_fetch_has_no_history(shared_remote, tmp_path):
+    bare, a, _ = shared_remote
+    sa = StorePaths.resolve(a)
+    _record(sa, "s-a")
+    assert push(sa, ON) is True
+    c = tmp_path / "c"
+    run_git(tmp_path, "clone", "-q", str(bare), str(c))
+    run_git(c, "fetch", "-q", "--all")
+    assert "wscontext" not in _refs(c)
+    assert "wscontext" not in run_git(c, "branch", "-a")

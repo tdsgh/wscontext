@@ -66,6 +66,8 @@ def test_resume_keeps_session_record(hook):
 
 
 def test_precompact_snapshot_follows_flag(hook, git_repo):
+    (git_repo / ".wscontext").mkdir()
+    (git_repo / ".wscontext" / "config.toml").write_text("[capture]\nprecompact_snapshot = true\n")
     hook("PreCompact", "pre_compact")
     assert len(list((hook.store.raw / "sessions").glob("*-pc*-sess-cap1.jsonl"))) == 1
 

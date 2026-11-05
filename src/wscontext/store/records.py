@@ -32,7 +32,8 @@ class TurnRecord:
 
 @dataclass(kw_only=True)
 class SessionRecord:
-    CURRENT_SCHEMA: ClassVar[int] = 1
+    # 2 adds ended_by, retrieval, brief_tokens, transcript_bytes; schema 1 reads them as None
+    CURRENT_SCHEMA: ClassVar[int] = 2
     session_id: str
     author: str
     agent: str = "claude-code"
@@ -48,6 +49,11 @@ class SessionRecord:
     tool_calls: dict[str, int] = field(default_factory=dict)
     ctx_calls: dict[str, int] = field(default_factory=dict)
     tokens: dict[str, int] | None = None
+    ended_by: str | None = None  # "session-end" or "idle"
+    retrieval: bool | None = None  # whether the brief and `ctx find` were on
+    brief_tokens: int | None = None
+    # "source", "stored", and stored bytes per entry kind
+    transcript_bytes: dict[str, int] | None = None
     schema_version: int = CURRENT_SCHEMA
 
 
@@ -115,7 +121,9 @@ def write_json(path: Path, value, config: Config, **dumps_kwargs) -> Path:
 
 
 def write_record(path: Path, rec, config: Config) -> Path:
-    return write_json(path, asdict(rec), config, ensure_ascii=False, indent=2)
+    # A record read in an earlier schema is written in the current one: it has every field.
+    return write_json(path, asdict(rec) | {"schema_version": rec.CURRENT_SCHEMA}, config,
+                      ensure_ascii=False, indent=2)
 
 
 def read_record[R](path: Path, cls: type[R]) -> R:

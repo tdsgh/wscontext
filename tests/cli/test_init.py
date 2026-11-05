@@ -61,7 +61,8 @@ def repo(git_repo: Path, monkeypatch, spawned) -> Path:  # noqa: F811
 def test_default_config_template_is_the_defaults():
     text = ctx_init.default_config_toml()
     parsed = tomllib.loads(text)
-    assert set(parsed) == {"redaction", "retention", "sync", "hooks", "capture", "logs"}
+    assert set(parsed) == {"redaction", "retention", "sync", "hooks", "capture", "logs",
+                           "retrieval", "store"}
     assert "remote" not in parsed["sync"]
     # the committed file and the template agree with the dataclasses, and so with each other
     assert tomllib.loads((REPO_ROOT / ".wscontext" / "config.toml").read_text()) == parsed
@@ -306,7 +307,9 @@ def test_sync_setup_status_dry_run_and_push(shared_remote, monkeypatch, spawned,
     commit_paths(store, paths, "session sess-one")
     code, out, _ = ctx(capsys, "sync", "--dry-run")
     assert code == 0 and "sessions a push would send: 1: sess-one" in out
-    assert run_git(bare, "branch", "--list", "wscontext/history").strip() == ""  # nothing pushed
+    # nothing pushed, in either layout
+    assert run_git(bare, "for-each-ref", "refs/wscontext/history",
+                   "refs/heads/wscontext/history").strip() == ""
 
     code, out, _ = ctx(capsys, "sync")
     assert code == 0 and "pushed history to origin" in out

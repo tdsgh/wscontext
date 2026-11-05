@@ -31,15 +31,30 @@ class HookConfig:
 
 @dataclass(frozen=True)
 class CaptureConfig:
-    # on until the PreCompact open question is answered
-    precompact_snapshot: bool = True
+    precompact_snapshot: bool = False
     # a session idle for longer is not linked to a commit (open question 2)
     stale_session_minutes: int = 120
+    # cut each stored tool result at this many characters; 0 keeps it whole
+    tool_result_max_chars: int = 0
 
 
 @dataclass(frozen=True)
 class LogsConfig:
     max_bytes: int = 1_048_576
+
+
+@dataclass(frozen=True)
+class RetrievalConfig:
+    # off turns the brief and `ctx find` off together
+    enabled: bool = True
+    brief: bool = True
+
+
+@dataclass(frozen=True)
+class StoreConfig:
+    # size warnings; the store limit counts the local store and shared history separately
+    session_warn_bytes: int = 10_485_760
+    store_warn_bytes: int = 1_073_741_824
 
 
 @dataclass(frozen=True)
@@ -50,6 +65,8 @@ class Config:
     hooks: HookConfig = field(default_factory=HookConfig)
     capture: CaptureConfig = field(default_factory=CaptureConfig)
     logs: LogsConfig = field(default_factory=LogsConfig)
+    retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
+    store: StoreConfig = field(default_factory=StoreConfig)
 
 
 def _build(cls, data: dict, where: str):
@@ -73,7 +90,8 @@ def load_config(repo_root: Path) -> Config:
         data = tomllib.load(f)
     sections = {"redaction": RedactionConfig, "retention": RetentionConfig,
                 "sync": SyncConfig, "hooks": HookConfig,
-                "capture": CaptureConfig, "logs": LogsConfig}
+                "capture": CaptureConfig, "logs": LogsConfig,
+                "retrieval": RetrievalConfig, "store": StoreConfig}
     kwargs = {}
     for key, value in data.items():
         if key in sections and isinstance(value, dict):

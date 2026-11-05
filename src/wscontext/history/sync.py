@@ -1,4 +1,4 @@
-"""Sharing the history branch through the sync remote.
+"""Sharing the history ref through the sync remote.
 
 Nothing here runs unless `[sync] remote` is set. Pushes happen only when a
 caller asks; nothing in this module pushes on its own.
@@ -12,8 +12,8 @@ from pathlib import Path
 
 from wscontext.config import Config
 from wscontext.gitutil import GitError, git, git_bytes
-from wscontext.history.branch import (HISTORY_REF, local_path, ls_blobs,
-                                      merge_into_local, read_tip)
+from wscontext.history.branch import (HISTORY_REF, LEGACY_REF, is_ancestor, local_path,
+                                      ls_blobs, merge_into_local, migrate_legacy, read_tip)
 from wscontext.redact.redactor import redact_bytes
 from wscontext.store.paths import StorePaths
 from wscontext.store.records import atomic_write
@@ -34,8 +34,15 @@ def tracking_ref(remote: str) -> str:
     return f"refs/remotes/{remote}/wscontext/history"
 
 
+def legacy_tracking_ref(remote: str) -> str:
+    """Where a fetch puts the remote's stage-1 `LEGACY_REF` branch."""
+    return f"refs/remotes/{remote}/wscontext/legacy-history"
+
+
 def fetch(store: StorePaths, config: Config, force: bool = False) -> bool:
     """Fetch the remote history, union-merge it into the local ref and materialize it.
+
+    Reads both remote locations: `HISTORY_REF` and the stage-1 `LEGACY_REF` branch.
 
     Throttled through `state/last_fetch` unless forced. Returns True when local
     history changed. Raises GitError when the fetch itself fails.
@@ -53,13 +60,18 @@ def fetch(store: StorePaths, config: Config, force: bool = False) -> bool:
             pass
     atomic_write(stamp, f"{now}\n".encode())
     # A glob refspec that matches nothing succeeds: a remote without history is not an error.
-    git("fetch", "--quiet", "--no-tags", "--no-write-fetch-head", "--no-recurse-submodules",
-        remote, f"+{HISTORY_REF}*:{tracking_ref(remote)}*", cwd=store.root)
-    theirs = read_tip(store, tracking_ref(remote))
-    if theirs is None:
-        return False
+    # --prune drops the tracking ref of a remote branch that is gone, so no push leases on it.
+    # --refmap= stops the configured refspec from also writing the legacy branch to
+    # `tracking_ref`, which `refs/heads/*:refs/remotes/<remote>/*` maps it to.
+    git("fetch", "--quiet", "--prune", "--refmap=", "--no-tags", "--no-write-fetch-head",
+        "--no-recurse-submodules", remote, f"+{HISTORY_REF}*:{tracking_ref(remote)}*",
+        f"+{LEGACY_REF}*:{legacy_tracking_ref(remote)}*", cwd=store.root)
     before = read_tip(store)
-    if merge_into_local(store, theirs) == before:
+    for ref in (tracking_ref(remote), legacy_tracking_ref(remote)):
+        theirs = read_tip(store, ref)
+        if theirs is not None:
+            merge_into_local(store, theirs)
+    if read_tip(store) == before:
         return False
     materialize(store, config)
     return True
@@ -68,26 +80,38 @@ def fetch(store: StorePaths, config: Config, force: bool = False) -> bool:
 def push(store: StorePaths, config: Config) -> bool:
     """Push the local history; on a rejection fetch, merge and retry once.
 
+    When the last fetch saw the remote's stage-1 `LEGACY_REF` branch and the local tip
+    contains it, the same atomic push deletes that branch, leased on the fetched tip.
     Never raises. Returns True when the remote holds the local tip.
     """
     remote = config.sync.remote
     if remote is None:
         return False
     try:
+        migrate_legacy(store)
         for attempt in range(2):
             tip = read_tip(store)
             if tip is None:
                 return False
+            legacy = read_tip(store, legacy_tracking_ref(remote))
+            if legacy is not None and not is_ancestor(store, legacy, tip):
+                legacy = None
+            # --no-verify: this push runs from inside the user's own pre-push hook.
+            args = ["push", "--quiet", "--no-verify"]
+            if legacy:
+                args += ["--atomic", f"--force-with-lease={LEGACY_REF}:{legacy}"]
+            args += [remote, f"{tip}:{HISTORY_REF}"] + ([f":{LEGACY_REF}"] if legacy else [])
             try:
-                # --no-verify: this push runs from inside the user's own pre-push hook.
-                git("push", "--quiet", "--no-verify", remote, f"{tip}:{HISTORY_REF}",
-                    cwd=store.root)
+                git(*args, cwd=store.root)
             except GitError:
                 if attempt == 1:
                     raise
                 fetch(store, config, force=True)
                 continue
             git("update-ref", tracking_ref(remote), tip, cwd=store.root)
+            if legacy:
+                git("update-ref", "-d", legacy_tracking_ref(remote), legacy, cwd=store.root)
+                log.info("removed the stage-1 history branch %s from %s", LEGACY_REF, remote)
             return True
     except Exception:
         log.warning("history push to %s failed", remote, exc_info=True)
@@ -139,7 +163,9 @@ def materialize(store: StorePaths, config: Config) -> int:
     blob last considered, and only a new blob or a missing local file is looked at
     again. A considered blob is written when the local file is missing or shorter
     than the redacted blob; a local copy at least as long is this host's own,
-    newer capture or already current. Returns the number of files written.
+    newer capture or already current. Paths in `state/pruned.json` (a JSON list of
+    branch paths, or an object keyed by them) were pruned on purpose and are never
+    written. Returns the number of files written.
     """
     tip = read_tip(store)
     if tip is None:
@@ -151,6 +177,11 @@ def materialize(store: StorePaths, config: Config) -> int:
         seen = {}
     if not isinstance(seen, dict):
         seen = {}
+    try:
+        pruned = {p for p in json.loads((store.state / "pruned.json").read_bytes())
+                  if isinstance(p, str)}
+    except (OSError, ValueError, TypeError):
+        pruned = set()
     current: dict[str, str] = {}
     wanted: list[tuple[Path, str, int]] = []
     for path, (_, sha, size) in ls_blobs(store, tip).items():
@@ -159,6 +190,8 @@ def materialize(store: StorePaths, config: Config) -> int:
             log.warning("history path not materialized: %s", path)
             continue
         current[path] = sha
+        if path in pruned:
+            continue
         if seen.get(path) != sha or not target.exists():
             wanted.append((target, sha, size))
     # Blobs are read in bounded batches so a fresh clone never holds all history in memory.
@@ -199,9 +232,9 @@ def materialize(store: StorePaths, config: Config) -> int:
 
 
 def shared_tips(store: StorePaths) -> list[str]:
-    """Tips of every remote-tracking history ref, as of the last fetch or push."""
-    return git("for-each-ref", "--format=%(objectname)", "refs/remotes/*/wscontext/history",
-               cwd=store.root).split()
+    """Tips of every remote-tracking history ref, legacy ones too, as of the last fetch or push."""
+    return git("for-each-ref", "--format=%(objectname)", tracking_ref("*"),
+               legacy_tracking_ref("*"), cwd=store.root).split()
 
 
 def shared_paths(store: StorePaths) -> set[str]:
