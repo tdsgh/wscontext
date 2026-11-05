@@ -135,8 +135,24 @@ def pre_push(store: StorePaths, config: Config, args: list[str], stdin: str) -> 
         spawn(store, "push")
 
 
+def post_merge(store: StorePaths, config: Config, args: list[str], stdin: str) -> None:
+    """A merge commit made here is checkpointed like a `post-commit` one; the graph refresh lands in stage 3."""
+    # `--squash` (argument "1") commits later through `post-commit`.
+    if args[:1] == ["1"]:
+        return
+    # A fast-forward leaves HEAD at a commit this merge did not create: its first parent is
+    # ORIG_HEAD only for a new merge commit, and a one-step fast-forward onto someone else's
+    # merge commit is told apart by the reflog.
+    out = git("rev-list", "--parents", "-1", "HEAD", cwd=store.root).split()
+    if len(out) < 3 or out[1] != git("rev-parse", "--verify", "ORIG_HEAD", cwd=store.root).strip():
+        return
+    if git("reflog", "-1", "--format=%gs", "HEAD", cwd=store.root).strip().endswith("Fast-forward"):
+        return
+    post_commit(store, config, args, stdin)
+
+
 def _graph_refresh(store: StorePaths, config: Config, args: list[str], stdin: str) -> None:
-    """`post-checkout` and `post-merge`: the code graph refresh lands in stage 3."""
+    """`post-checkout`: the code graph refresh lands in stage 3."""
 
 
 HANDLERS = {
@@ -146,5 +162,5 @@ HANDLERS = {
     "post-rewrite": post_rewrite,
     "pre-push": pre_push,
     "post-checkout": _graph_refresh,
-    "post-merge": _graph_refresh,
+    "post-merge": post_merge,
 }

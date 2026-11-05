@@ -460,7 +460,8 @@ def trace_merge(acc: Acc) -> str:
     parents = acc.git(repo, "rev-list", "--parents", "-1", "HEAD").split()[1:]
     check(len(parents) == 2, f"HEAD is not a merge commit: {parents}")
     check(acc.trailers(repo) == [sid], f"merge commit trailers: {acc.trailers(repo)}")
-    # Git runs post-merge, not post-commit, for a merge: the trailer is the link, no checkpoint is written.
+    # Git runs post-merge, not post-commit, for a merge: the post-merge handler writes the checkpoint.
+    acc.checkpoint(repo, acc.git(repo, "rev-parse", "HEAD"))
     acc.hook(repo, "SessionEnd", sid)
     out = acc.ctx(repo, "why", "feat.txt:1").stdout
     check("no linked session" in out, "blame of merged-in lines moved to the merge commit")

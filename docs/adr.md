@@ -389,6 +389,8 @@ session in the worktree, and does nothing during a rebase or `git am`.
 **Guardrail.** `commit-msg` is not redundant: Git would commit a trailer-only
 message after an aborted editor.
 
+Superseded by ADR-030 for the checkpoint implication; the rest stands.
+
 ### ADR-026 — `ctx forget` squashes history-branch commits not yet pushed
 
 **Decision.** Forgetting a session that is not on a remote removes its files
@@ -435,3 +437,16 @@ off, then on.
   logged-in Claude Code.
 - Stage 2 adds a configuration switch that turns the brief and search off.
 - Stage-1 sessions are not a baseline; the benchmark's off arm is.
+
+### ADR-030 — A merge commit made in the repository is checkpointed by `post-merge`
+
+**Decision.** `post-merge` writes the checkpoint for a merge commit this merge
+created when it carries `AI-Session` trailers. A fast-forward and `--squash`
+write none; a squash is checkpointed by the later `git commit`.
+
+**Implications.**
+- A fast-forward is told apart by the first parent against `ORIG_HEAD` and by
+  the reflog subject, which Git writes untranslated
+  (src/wscontext/githooks/handlers.py:138-151).
+- With reflogs disabled, a fast-forward onto someone else's merge commit whose
+  first parent is the local `HEAD` is checkpointed as local.

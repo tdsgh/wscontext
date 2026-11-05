@@ -259,3 +259,76 @@ def test_real_hook_environment_in_a_linked_worktree(git_repo, launcher, tmp_path
     for tree in (wt, git_repo):
         assert run_git(tree, "status", "--porcelain") == ""
         assert run_git(tree, "diff", "--cached", "--name-only") == ""
+
+
+def _diverge(repo, active: str | None = None) -> None:
+    """`main` and `feature` each carry one commit the other lacks."""
+    run_git(repo, "checkout", "-q", "-b", "feature")
+    _commit(repo, "f.txt")
+    run_git(repo, "checkout", "-q", "main")
+    _commit(repo, "m.txt")
+    if active:
+        activate(StorePaths.resolve(repo), active)
+
+
+def test_merge_commit_with_active_session_gets_a_checkpoint(repo):
+    store = StorePaths.resolve(repo)
+    _diverge(repo, "s-1")
+    run_git(repo, "merge", "-q", "--no-ff", "-m", "merge feature", "feature")
+    sha = head(repo)
+    assert trailers(repo) == ["s-1"]
+    wait_log(store, "worker:git-checkpoint")
+    rec = checkpoint(store, sha)
+    assert rec.session_ids == ["s-1"] and rec.rewritten_from is None and _on_branch(repo, sha)
+    assert all(e["ok"] for e in log_lines(store, "git:post-merge"))
+
+
+def test_fast_forward_merge_writes_no_checkpoint(repo):
+    store = StorePaths.resolve(repo)
+    run_git(repo, "checkout", "-q", "-b", "feature")
+    theirs = _commit(repo, "f.txt", "x\n", "--trailer", "AI-Session: s-theirs")
+    wait_log(store, "worker:git-checkpoint")  # their commit's own checkpoint
+    run_git(repo, "checkout", "-q", "main")
+    activate(store, "s-1")
+    run_git(repo, "merge", "-q", "feature")
+    assert head(repo) == theirs
+    time.sleep(1)
+    assert log_lines(store, "git:post-merge") and len(log_lines(store, "worker:git-checkpoint")) == 1
+
+
+def test_fast_forward_onto_a_merge_commit_writes_no_checkpoint(repo):
+    store = StorePaths.resolve(repo)
+    run_git(repo, "checkout", "-q", "-b", "side")
+    _commit(repo, "s.txt")
+    run_git(repo, "checkout", "-q", "-b", "feature", "main")
+    # someone else's merge commit whose first parent is our HEAD
+    run_git(repo, "merge", "-q", "--no-ff", "-m", "their merge\n\nAI-Session: s-theirs", "side")
+    theirs = head(repo)
+    wait_log(store, "worker:git-checkpoint")  # their merge's own checkpoint
+    run_git(repo, "checkout", "-q", "main")
+    activate(store, "s-1")
+    run_git(repo, "merge", "-q", "feature")
+    assert head(repo) == theirs and trailers(repo) == ["s-theirs"]
+    time.sleep(1)
+    assert len(log_lines(store, "git:post-merge")) == 2
+    assert len(log_lines(store, "worker:git-checkpoint")) == 1
+
+
+def test_squash_merge_writes_no_checkpoint_until_the_commit(repo):
+    store = StorePaths.resolve(repo)
+    _diverge(repo, "s-1")
+    run_git(repo, "merge", "-q", "--squash", "feature")
+    time.sleep(1)
+    assert log_lines(store, "git:post-merge") and not log_lines(store, "worker:git-checkpoint")
+    run_git(repo, "commit", "-q", "-m", "squashed")
+    wait_log(store, "worker:git-checkpoint")
+    assert checkpoint(store, head(repo)).session_ids == ["s-1"]
+
+
+def test_merge_with_no_session_writes_no_checkpoint(repo):
+    store = StorePaths.resolve(repo)
+    _diverge(repo)
+    run_git(repo, "merge", "-q", "--no-ff", "-m", "merge feature", "feature")
+    time.sleep(1)
+    assert trailers(repo) == [] and checkpoint(store, head(repo)) is None
+    assert log_lines(store, "git:post-merge") and not log_lines(store, "worker:git-checkpoint")

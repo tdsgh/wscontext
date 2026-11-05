@@ -109,7 +109,8 @@ branch holding `raw/` and `records/` only, written with Git plumbing
 | Git `post-commit` | After a commit | Detached worker writes the checkpoint and commits it to the history branch, when `HEAD` has trailers |
 | Git `post-rewrite` | After amend or rebase | Queues old to new pairs; detached worker writes checkpoints for the rewritten SHAs |
 | Git `pre-push` | Before a push | Detached worker pushes `wscontext/history` when sync is configured; the shim runs wscontext only if the chained original exited 0 |
-| Git `post-checkout`, `post-merge` | Branch switch, merge | Installed; the handler is a no-op until stage 3 |
+| Git `post-merge` | Merge | A merge commit created here that carries `AI-Session` trailers is checkpointed like `post-commit`; a fast-forward and `--squash` write nothing. The graph refresh lands in stage 3 |
+| Git `post-checkout` | Branch switch | Installed; the handler is a no-op until stage 3 |
 
 ## Data model
 
@@ -179,7 +180,8 @@ are in [roadmap.md](roadmap.md).
   (src/wscontext/cli/forget.py).
 - Page boundaries of `ctx show` are computed per call from the growing raw copy,
   so they shift while the session is active (src/wscontext/cli/show.py:16, 77).
-- `post-checkout` and `post-merge` are installed but do nothing until stage 3
+- `post-checkout` is installed but does nothing until stage 3; `post-merge`
+  checkpoints a merge commit made here and refreshes nothing until stage 3
   (src/wscontext/githooks/handlers.py:138).
 - `bin/ctx.cmd` and the Windows path are untested until Finalize (bin/ctx.cmd:2;
   → ADR-021).

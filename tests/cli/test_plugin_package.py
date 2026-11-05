@@ -15,7 +15,7 @@ SH_ONLY = pytest.mark.skipif(os.name == "nt", reason="the sh launcher")
 
 def test_plugin_manifest_shape():
     plugin = json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())
-    assert plugin["name"] == "wscontext" and plugin["version"] == "0.1.0"
+    assert plugin["name"] == "wscontext" and re.fullmatch(r"\d+\.\d+\.\d+", plugin["version"])
     market = json.loads((ROOT / ".claude-plugin" / "marketplace.json").read_text())
     assert market["name"] == "wscontext" and market["owner"]["name"]
     assert [(p["name"], p["source"]) for p in market["plugins"]] == [("wscontext", "./")]
@@ -100,7 +100,9 @@ def test_launcher_builds_once_and_passes_plugin_paths(launcher):
     run("--plugin-data", str(data), "why", "a.py")
     assert len(log.read_text().splitlines()) == 2
     manifest = root / ".claude-plugin" / "plugin.json"
-    manifest.write_text(manifest.read_text().replace("0.1.0", "0.1.1"))  # a version bump, same folder
+    spec = json.loads(manifest.read_text())
+    spec["version"] += ".1"  # a version bump, same folder
+    manifest.write_text(json.dumps(spec))
     run("--plugin-data", str(data), "why", "a.py")
     assert len(log.read_text().splitlines()) == 3
 
