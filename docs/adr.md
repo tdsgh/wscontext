@@ -283,6 +283,8 @@ best-effort basis.
 
 **Reasoning.** [design-rationale.md § Why not OpenTelemetry for monitoring](design-rationale.md#why-not-opentelemetry-for-monitoring)
 
+Superseded by ADR-029 for the baseline implication; the rest stands.
+
 ### ADR-020 — Portable across macOS, Linux and Windows
 
 **Decision.** All logic is in Python. Shell is limited to one-line launcher and
@@ -417,3 +419,19 @@ commands.
 
 **Implications.**
 - The suite and the timing-sensitive repeat rule are in root `CLAUDE.md` § Test gates.
+
+### ADR-029 — Stage gates check requirements; real use and value are measured at Alpha and Beta
+
+**Decision.** A stage gate passes when the stage's acceptance scenarios pass:
+the offline suite, a scripted run against the installed plugin with real Git
+and headless Claude Code, and a short manual checklist. Real use starts at
+Alpha, after stage 3; Beta, after stage 4, adds a second developer. Value is
+measured by a fixed task set run headless with wscontext's brief and search
+off, then on.
+
+**Implications.**
+- No stage waits on calendar time.
+- The scripted acceptance run and the benchmark spend API usage and need a
+  logged-in Claude Code.
+- Stage 2 adds a configuration switch that turns the brief and search off.
+- Stage-1 sessions are not a baseline; the benchmark's off arm is.

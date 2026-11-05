@@ -152,8 +152,8 @@ Every record carries a schema version and the Git author who produced it.
 
 ## Stages
 
-Stage 1 is built; its gate (two weeks of real work) is not yet passed. Stages
-and their gates are in [roadmap.md](roadmap.md).
+Stage 1 is built; its acceptance gate is not yet run. Stages and their gates
+are in [roadmap.md](roadmap.md).
 
 | Stage | Delivers | Requirements | Status |
 |---|---|---|---|

@@ -10,7 +10,7 @@ Every Claude Code session in a repository is recorded without anyone having to
 remember to do it, every commit can be traced back to the sessions that
 produced it, and the operator can see what has been collected and how sessions
 behave. Stage 1 delivers the data everything later stages search, plus the
-baseline numbers later stages are measured against.
+turn and tool-call figures later benchmarks read.
 
 ## 2. What we are building
 
@@ -186,8 +186,8 @@ retries without failing the operator's code push.
 - See another machine's capture health or raw call log. Those stay on the
   machine that produced them; per-session counts travel with shared history.
 
-Turn and tool-call figures are collected from the first day, so later stages
-can be compared against a baseline.
+Turn and tool-call figures are collected from the first day; later benchmarks
+read them.
 
 ## 11. Cross-cutting requirements
 
@@ -226,7 +226,7 @@ can be compared against a baseline.
 2. Which "active session" applies when a commit is made long after the last
    prompt — how stale may a session be and still be linked? Answered
    provisionally: 120 minutes since the session's last activity; adjustable in
-   the configuration. Revisit after the two-week gate.
+   the configuration. Revisit at Alpha.
 3. When the Git host squash-merges a pull request, are the session trailers
    kept? If not, should the squash commit be linked from the merged commits?
    Open.

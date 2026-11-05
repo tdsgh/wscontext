@@ -7,7 +7,7 @@ described in [architecture.md](architecture.md); decisions are in
 
 Stage 1 is built; stages 2 to 4 are designed. Everything below marked stage 2
 or later describes the designed plugin. The effects on quality, speed and cost
-are expected outcomes that each stage has to prove at its gate
+are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
 ([roadmap.md](roadmap.md)), not measured results.
 
 ## What a developer can do with it
@@ -98,8 +98,8 @@ are expected outcomes that each stage has to prove at its gate
   - Heavy work runs in detached workers.
   - Before answering, each query first indexes whatever is new since the last
     run, so nothing has to stay running.
-- **Proof:** the stage 3 gate requires fewer search-type tool calls per task
-  than stage 2, read from `ctx stats turns`.
+- **Proof:** at Alpha, the on/off benchmark shows fewer search-type tool calls
+  per task with wscontext on, read from `ctx stats turns`.
 
 ### Costs
 
@@ -112,8 +112,8 @@ are expected outcomes that each stage has to prove at its gate
 
 Embeddings run locally, so search adds no API spend.
 
-The net effect is a hypothesis until measured. Stage 1 collects baseline turn,
-tool-call and token figures from the first day, so the stage 2–4 gates can
-compare against real numbers rather than impressions. The token figures are
-best effort: they depend on Claude Code's transcript format, which is internal
-and may change (ADR-002).
+The net effect is a hypothesis until measured. A fixed task set run with
+wscontext's brief and search off, then on, compares turn, tool-call and token
+figures from Alpha on, rather than impressions. The token figures are best
+effort: they depend on Claude Code's transcript format, which is internal and
+may change (ADR-002).

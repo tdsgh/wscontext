@@ -14,12 +14,30 @@ Each stage can be used on its own. Stop as soon as the value stops growing.
    `build-plan-wscontext-phase-N.md`. Route every work package to a layer agent
    in `.claude/agents/`; add an agent only when the stage opens a new layer.
 3. **Build.** `/kit:run-build-plan docs/build-plan-wscontext-phase-N.md`.
-4. **Gate.** Measure the stage gate with `ctx stats` and the eval set. Record
-   the result in the build plan's closing notes.
+4. **Gate.** Run the stage's acceptance scenarios and any eval set
+   (§ Gates and milestones). Record the result in the build plan's closing
+   notes.
 5. **Record.** Update `architecture.md` (move the stage out of § Not built yet)
    and append ADR entries for decisions taken during the build.
 6. **Archive.** When stage N+1 starts, `git mv` stage N's two documents into
    `hist/` and fix links (see [CLAUDE.md](CLAUDE.md) § Archiving).
+
+## Gates and milestones
+
+- **A stage gate checks the stage's requirements, not real use.** Each
+  capability section of the stage document maps to acceptance scenarios with an
+  observable result, run at three levels: the offline suite; a scripted run
+  against the installed plugin in a throwaway repository, driving real Git and
+  headless Claude Code (`claude -p`); a short manual checklist for what a
+  script cannot reach. Scripted scenarios are kept and rerun at every later
+  gate.
+- **Real use starts at Alpha**, after stage 3, and widens at Beta, after
+  stage 4. Non-functional and integration checks (hook latency, blocked
+  commits, store growth, sync between machines, team use) belong to those
+  milestones, not to stage gates.
+- **Value is measured by an on/off task benchmark:** a fixed task set run
+  headless with wscontext's brief and search switched off, then on, compared
+  through `ctx stats turns` (→ ADR-029).
 
 ## Stage 1 — Capture and trace
 
@@ -29,10 +47,15 @@ Plugin, capture with redaction, commit linking, opt-in history sharing, and
 - **Requirements:** [wscontext-phase-1.md](wscontext-phase-1.md).
 - **Build plan:** [build-plan-wscontext-phase-1.md](build-plan-wscontext-phase-1.md).
 - **Monitoring added:** collected data, Claude Code turns, `ctx` calls, capture
-  health. The turn and tool-call baseline starts here.
-- **Gate:** two weeks of real work captured, with zero blocked commits or
-  stalled sessions; with sharing on, history is available on a second machine
-  after clone and init.
+  health.
+- **Acceptance run:** a scripted run of the stage-1 scenarios against the
+  installed plugin, added to the build plan as its last work package.
+- **Gate:** the acceptance scenarios for §4–§10 of the stage document pass on
+  the installed plugin: setup (init, doctor, uninstall, chained hooks);
+  capture (resume, compaction, a subagent, two concurrent sessions); tracing
+  (amend, rebase, a commit with no session, an aborted message, a merge);
+  `why`, `show` and `forget`; sharing between two clones through one remote;
+  `ctx stats` agreeing with what the scenarios did.
 
 ## Stage 2 — History search
 
@@ -44,11 +67,15 @@ start, the `ctx` skill and CLAUDE.md triggers for search.
 - **Store size:** the transcript copy drops Claude Code's bookkeeping entries;
   decide whether the history branch moves outside `refs/heads/` so a plain
   clone does not fetch it (would change ADR-007, ADR-008).
+- **Benchmark switch:** a configuration setting turns the brief and search off,
+  for the on/off benchmark.
 - **Eval set:** 20 questions about past work, each with the expected session or
   commit, kept in the repository and run by a `ctx` eval command.
+- **Eval corpus:** open — which captured history the eval set searches before
+  Alpha.
 - **New agent:** `py-index`.
-- **Gate:** the right session or commit is in the top 3 for at least 15 of the
-  20 questions.
+- **Gate:** the stage's acceptance scenarios pass, and the right session or
+  commit is in the top 3 for at least 15 of the 20 questions.
 
 ## Stage 3 — Code graph
 
@@ -58,8 +85,21 @@ name-matched `calls`; `ctx code`, `ctx impact`; `ctx why #symbol` on the graph.
 - **Monitoring added:** files, symbols and edges by language; build time; stale
   files.
 - **New agent:** `py-graph`.
-- **Gate:** fewer search-type tool calls and tokens per task than in stage 2,
-  from `ctx stats turns`.
+- **Benchmark:** the on/off task set, kept in the repository and run headless.
+- **Gate:** the acceptance scenarios for `ctx code`, `ctx impact` and
+  `ctx why #symbol` pass, and the benchmark runs end to end.
+
+## Alpha — own projects
+
+Stages 1 to 3 in daily use on the developer's own repositories, with sync on
+between two machines.
+
+- **Watch:** `ctx stats hooks` (failures, p95 against the budget), blocked
+  commits, store and history-branch growth, sync between the machines.
+- **Value:** the on/off benchmark shows fewer search-type tool calls and tokens
+  per task with wscontext on.
+- **Exit:** at least 30 real sessions with no hook failure and no blocked
+  commit, and the benchmark result above. Defects found go into stage 4.
 
 ## Stage 4 — Distillation and semantic search
 
@@ -68,8 +108,18 @@ embeddings, hybrid ranking.
 
 - **Monitoring added:** decisions by status (active, superseded,
   machine-written, reviewed), embedding coverage.
-- **Gate:** the 20-question set improves further, and spot checks find no
-  superseded decision presented as current.
+- **Gate:** the stage's acceptance scenarios pass, the 20-question set improves
+  further, and spot checks find no superseded decision presented as current.
+
+## Beta — team use
+
+Stages 1 to 4, functionally complete, used by at least one more developer on a
+shared repository.
+
+- **Watch:** history sharing between developers, history-branch size on the
+  remote, adoption across both developers.
+- **Value:** the benchmark improves on Alpha's result.
+- **Exit:** Alpha's reliability bar held across both developers.
 
 ## Stage 5 — Finalize
 
@@ -86,4 +136,4 @@ embeddings, hybrid ranking.
 - **Optional:** a VS Code extension that shows the session behind a line on
   hover.
 - **Gate:** a clean install on a second machine and on Windows passes
-  `ctx doctor` and the stage-1 human gate.
+  `ctx doctor` and the scripted acceptance run.
