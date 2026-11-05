@@ -153,7 +153,7 @@ Every record carries a schema version and the Git author who produced it.
 
 ## Stages
 
-Stage 1 is built; its acceptance gate is not yet run. Stages and their gates
+Stage 1 is built and passed its acceptance gate. Stages and their gates
 are in [roadmap.md](roadmap.md).
 
 | Stage | Delivers | Requirements | Status |
@@ -194,3 +194,9 @@ are in [roadmap.md](roadmap.md).
   tool listings) are a large share of a short session. With sync on,
   `wscontext/history` is a branch under `refs/heads/`, so a plain clone of the
   sync remote downloads all shared history (→ ADR-007).
+- A session that never sends `SessionEnd` (a closed VS Code conversation, a
+  terminal session that is gone) keeps the local transcript copy written at
+  each `Stop` but gets no final copy, no counts and no history-branch commit,
+  so it is never shared; it stays in new commits' trailers until
+  `capture.stale_session_minutes` pass (src/wscontext/capture/handlers.py:91,
+  src/wscontext/githooks/handlers.py:40). The fix is planned for stage 2.

@@ -67,6 +67,8 @@ start, the `ctx` skill and CLAUDE.md triggers for search.
 - **Store size:** the transcript copy drops Claude Code's bookkeeping entries;
   decide whether the history branch moves outside `refs/heads/` so a plain
   clone does not fetch it (would change ADR-007, ADR-008).
+- **Abandoned sessions:** a session that never sends `SessionEnd` is finalized
+  once idle past the staleness window: final copy, counts and history commit.
 - **Benchmark switch:** a configuration setting turns the brief and search off,
   for the on/off benchmark.
 - **Eval set:** 20 questions about past work, each with the expected session or
@@ -95,7 +97,8 @@ Stages 1 to 3 in daily use on the developer's own repositories, with sync on
 between two machines.
 
 - **Watch:** `ctx stats hooks` (failures, p95 against the budget), blocked
-  commits, store and history-branch growth, sync between the machines.
+  commits, store and history-branch growth, sync between the machines; whether
+  the agent runs `ctx why` before changing code it did not write.
 - **Value:** the on/off benchmark shows fewer search-type tool calls and tokens
   per task with wscontext on.
 - **Exit:** at least 30 real sessions with no hook failure and no blocked
