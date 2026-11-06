@@ -3,15 +3,19 @@
 import json
 import os
 import re
+import sqlite3
 from pathlib import Path
 
-from wscontext.cli.init import launcher_path
+from wscontext.cli.init import claude_block, current_block, launcher_path
 from wscontext.cli.output import Reply
 from wscontext.config import Config
 from wscontext.githooks.install import CHAINED_SUFFIX, HOOKS, hooks_dir, _is_shim
-from wscontext.gitutil import git
+from wscontext.gitutil import GitError, git
+from wscontext.history.branch import HISTORY_REF, LEGACY_REF, read_tip
+from wscontext.history.sync import legacy_tracking_ref
 from wscontext.logs import HOOKS_LOG
-from wscontext.stats.data import read_log
+from wscontext.stats.data import _index, collect, read_log
+from wscontext.stats.render import _warning_line
 from wscontext.store.paths import StorePaths
 
 OK, WARN, FAIL = "ok", "warn", "fail"
@@ -119,6 +123,82 @@ def _sync(store: StorePaths, config: Config) -> dict:
     return _item("sync", OK, f"sharing through {remote}")
 
 
+def _fts5(config: Config) -> dict:
+    try:
+        sqlite3.connect(":memory:").execute("CREATE VIRTUAL TABLE t USING fts5(x)")
+    except sqlite3.Error:
+        return _item("search engine", FAIL if config.retrieval.enabled else WARN,
+                     f"SQLite {sqlite3.sqlite_version} in this Python has no FTS5, so `ctx find` cannot run",
+                     "use a Python build whose SQLite includes FTS5 (the python.org, uv and Homebrew builds do)")
+    return _item("search engine", OK, f"SQLite {sqlite3.sqlite_version} with FTS5")
+
+
+def _search_index(store: StorePaths, config: Config) -> dict:
+    if not config.retrieval.enabled:
+        return _item("search index", OK, "not used: [retrieval] enabled = false")
+    ix = _index(store)
+    if not ix["present"]:
+        if any((store.records / "sessions").glob("*.json")):
+            return _item("search index", WARN, "missing, although sessions are captured",
+                         "run `ctx rebuild` (or any `ctx find`, which builds what is missing)")
+        return _item("search index", OK, "not built yet: built on the first capture")
+    detail = (f"{ix['sessions']} sessions, {ix['commits']} commits, {ix['documents']} documents; "
+              f"lag {ix['lag']} sources behind captured history")
+    return _item("search index", OK if not ix["lag"] else WARN, detail,
+                 "the next capture or `ctx find` refreshes it; `ctx rebuild` rebuilds it from scratch")
+
+
+def _history_layout(store: StorePaths, config: Config) -> dict:
+    notes = []
+    if read_tip(store, LEGACY_REF):
+        notes.append(f"local stage-1 branch {LEGACY_REF} still exists; it moves into {HISTORY_REF} "
+                     "on the next capture or `ctx sync`")
+    remote = config.sync.remote
+    if remote and read_tip(store, legacy_tracking_ref(remote)):
+        notes.append(f"{remote} still has the stage-1 branch {LEGACY_REF} (as of the last fetch); "
+                     "the next `ctx sync` push removes it once local history contains it")
+    if notes:
+        return _item("history ref", WARN, "; ".join(notes),
+                     "run `ctx sync` to finish the move" if remote else "any capture finishes the move")
+    return _item("history ref", OK, f"{HISTORY_REF}" + ("" if read_tip(store) else " (no history yet)"))
+
+
+def _block(store: StorePaths, config: Config) -> dict:
+    path = store.root / "CLAUDE.md"
+    block = current_block(path.read_text(encoding="utf-8", errors="replace")) if path.exists() else None
+    if block is None:
+        return _item("claude.md block", WARN, "no wscontext block in CLAUDE.md", REINIT)
+    on = config.retrieval.enabled
+    if ("ctx find" in block) != on:
+        return _item("claude.md block", WARN,
+                     f"the block {'lacks' if on else 'has'} the `ctx find` trigger, but retrieval is {'on' if on else 'off'}",
+                     REINIT)
+    if block != claude_block(on):
+        return _item("claude.md block", WARN, "the block is out of date", REINIT)
+    return _item("claude.md block", OK, "matches the retrieval switch " + ("(on)" if on else "(off, no `ctx find` trigger)"))
+
+
+def _size_warnings(store: StorePaths, config: Config) -> list[dict]:
+    try:
+        found = collect(store, config, None)["warnings"]
+    except (GitError, OSError):
+        return [_item("size limits", WARN, "could not measure the store", "run `ctx stats data`")]
+    return [_item("size limits", WARN, _warning_line(w), "see `ctx stats data`; lower `capture.tool_result_max_chars` "
+                  "to cut long tool results, or prune with `retention.raw_days`") for w in found] \
+        or [_item("size limits", OK, "no session or store over its limit")]
+
+
+def _stale_tracking(store: StorePaths) -> list[dict]:
+    remotes = set(git("remote", cwd=store.root).split())
+    stale: dict[str, list[str]] = {}
+    for ref in git("for-each-ref", "--format=%(refname)", "refs/wscontext/remotes/", cwd=store.root).split():
+        name, _, leaf = ref.removeprefix("refs/wscontext/remotes/").rpartition("/")
+        if leaf in ("history", "legacy-history") and name not in remotes:
+            stale.setdefault(name, []).append(ref)
+    return [_item("tracking refs", WARN, f"{', '.join(refs)} track remote {name!r}, which no longer exists",
+                  " && ".join(f"git update-ref -d {r}" for r in refs)) for name, refs in stale.items()]
+
+
 def add_arguments(parser) -> None:
     pass
 
@@ -131,6 +211,9 @@ def run(args, store: StorePaths, config: Config) -> Reply:
                        REINIT))
     items += _git_hooks(args, store)
     items += [_claude_hooks(store), _store(store), _sync(store, config)]
+    if enabled:
+        items += [_fts5(config), _search_index(store, config), _history_layout(store, config),
+                  _block(store, config), *_size_warnings(store, config), *_stale_tracking(store)]
     code = int(any(i["status"] == FAIL for i in items))
     if args.json:
         return Reply(json.dumps({"command": "ctx doctor", "ok": not code, "checks": items}, indent=2), code, report=True)

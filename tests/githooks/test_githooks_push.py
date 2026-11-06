@@ -132,3 +132,21 @@ def test_git_hook_path_imports_only_stdlib():
             "print(sorted(new - set(sys.stdlib_module_names) - {'wscontext'}))")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "[]", out.stdout
+
+
+def test_push_before_any_history_is_skipped_not_failed(repo, tmp_path):
+    _with_remote(repo, tmp_path)
+    store = StorePaths.resolve(repo)
+    assert git_run(repo, "push", "-q", "origin", "main").returncode == 0
+    entry = wait_log(store, "worker:git-push")[0]
+    assert entry["ok"] is True and entry["skipped"] == "no history yet" and "error" not in entry
+
+
+def test_failed_history_push_logs_its_cause(repo, tmp_path):
+    _with_remote(repo, tmp_path)
+    store = StorePaths.resolve(repo)
+    _linked_commit(repo, store)
+    (repo / ".wscontext" / "config.toml").write_text('[sync]\nremote = "nowhere"\n')
+    assert git_run(repo, "push", "-q", "origin", "main").returncode == 0
+    entry = wait_log(store, "worker:git-push")[0]
+    assert entry["ok"] is False and "nowhere" in entry["error"] and "skipped" not in entry

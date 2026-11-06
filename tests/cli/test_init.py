@@ -14,7 +14,7 @@ from wscontext.cli.main import main
 from wscontext.cli.sync import set_remote
 from wscontext.config import Config, load_config
 from wscontext.githooks.install import HOOKS
-from wscontext.history.branch import commit_paths
+from wscontext.history.branch import HISTORY_REF, LEGACY_REF, commit_paths, read_tip
 from wscontext.store.paths import StorePaths
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -336,3 +336,119 @@ def test_sync_push_with_no_history_pushes_nothing(repo, capsys, tmp_path):
     ctx(capsys, "sync", "--setup")
     code, out, _ = ctx(capsys, "sync")
     assert code == 0 and "nothing to push" in out
+
+
+def test_block_per_retrieval_switch():
+    on, off = ctx_init.claude_block(True), ctx_init.claude_block(False)
+    assert "ctx find" in on and "ctx why" in on
+    assert "ctx find" not in off and "ctx why" in off
+    assert on.startswith(ctx_init.BLOCK_BEGIN) and off.endswith(ctx_init.BLOCK_END + "\n")
+    # a run replaces the block in place, in both directions, and keeps the text around it
+    text = f"top\n\n{on}\nbottom\n"
+    assert ctx_init.set_block(text, False) == f"top\n\n{off}\nbottom\n"
+    assert ctx_init.set_block(ctx_init.set_block(text, False), True) == text
+
+
+def test_init_writes_the_block_for_the_switch(repo, opts, capsys):
+    ctx(capsys, *opts, "init")
+    assert "ctx find" in (repo / "CLAUDE.md").read_text()
+    config = repo / ".wscontext" / "config.toml"
+    config.write_text(config.read_text().replace("enabled = true", "enabled = false"))
+    code, out, _ = ctx(capsys, *opts, "init")
+    assert code == 0 and "CLAUDE.md block updated" in out
+    text = (repo / "CLAUDE.md").read_text()
+    assert "ctx find" not in text and text.count(ctx_init.BLOCK_BEGIN) == 1
+
+
+def _doctor_line(out: str, name: str) -> str:
+    return next(line for line in out.splitlines() if f"] {name}:" in line)
+
+
+def test_doctor_new_items_on_a_fresh_repository(repo, opts, capsys):
+    ctx(capsys, *opts, "init")
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    assert "[FAIL]" not in out
+    assert "[  OK] search engine: SQLite" in _doctor_line(out, "search engine")
+    assert "[  OK] search index: not built yet" in _doctor_line(out, "search index")
+    assert f"[  OK] history ref: {HISTORY_REF} (no history yet)" in _doctor_line(out, "history ref")
+    assert "[  OK] claude.md block: matches the retrieval switch (on)" in _doctor_line(out, "claude.md block")
+    assert "[  OK] size limits: no session or store over its limit" in _doctor_line(out, "size limits")
+    assert "tracking refs" not in out
+
+
+def test_doctor_flags_a_block_that_does_not_match_the_switch(repo, opts, capsys):
+    ctx(capsys, *opts, "init")
+    config = repo / ".wscontext" / "config.toml"
+    config.write_text(config.read_text().replace("enabled = true", "enabled = false"))
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    line = _doctor_line(out, "claude.md block")
+    assert line.startswith("[WARN]") and "has the `ctx find` trigger, but retrieval is off" in line
+    assert "fix: run `ctx init` in this repository" in out
+    assert "not used: [retrieval] enabled = false" in _doctor_line(out, "search index")
+    ctx(capsys, *opts, "init")
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    assert "(off, no `ctx find` trigger)" in _doctor_line(out, "claude.md block")
+    # a stage-1 block lacks the trigger while retrieval is on
+    config.write_text(config.read_text().replace("enabled = false", "enabled = true"))
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    assert "lacks the `ctx find` trigger" in _doctor_line(out, "claude.md block")
+
+
+def test_doctor_reports_index_lag_and_size_warnings(repo, opts, capsys):
+    from cli_support import add_session
+    ctx(capsys, *opts, "init")
+    store = StorePaths.resolve(repo)
+    add_session(store, "sess-one")
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    assert "[WARN] search index: missing, although sessions are captured" in out
+    ctx(capsys, "rebuild")
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    assert "[  OK] search index: 1 sessions" in out and "lag 0 sources" in out
+    config = repo / ".wscontext" / "config.toml"
+    config.write_text(config.read_text().replace("session_warn_bytes = 10485760", "session_warn_bytes = 100"))
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    line = _doctor_line(out, "size limits")
+    assert line.startswith("[WARN]") and "session sess-one" in line and "is over the 100 B limit" in line
+
+
+def test_doctor_stale_tracking_refs_and_the_history_move(shared_remote, opts, monkeypatch, spawned, capsys):
+    bare, a, _ = shared_remote
+    monkeypatch.chdir(a)
+    ctx(capsys, *opts, "init")
+    ctx(capsys, "sync", "--setup")
+    from cli_support import add_session
+    store = StorePaths.resolve(a)
+    commit_paths(store, add_session(store, "sess-one"), "session sess-one")
+    tip = read_tip(store)
+
+    # tracking refs of a remote that was removed
+    run_git(a, "update-ref", "refs/wscontext/remotes/gone/history", tip)
+    run_git(a, "update-ref", "refs/wscontext/remotes/gone/legacy-history", tip)
+    _, out, _ = ctx(capsys, "doctor")
+    line = _doctor_line(out, "tracking refs")
+    assert line.startswith("[WARN]") and "remote 'gone', which no longer exists" in line
+    assert "fix: git update-ref -d refs/wscontext/remotes/gone/history && " \
+           "git update-ref -d refs/wscontext/remotes/gone/legacy-history" in out
+    assert "origin" not in line
+    for ref in ("history", "legacy-history"):
+        run_git(a, "update-ref", "-d", f"refs/wscontext/remotes/gone/{ref}")
+
+    # a local stage-1 branch
+    run_git(a, "update-ref", LEGACY_REF, tip)
+    _, out, _ = ctx(capsys, "doctor")
+    assert f"[WARN] history ref: local stage-1 branch {LEGACY_REF} still exists" in out
+    run_git(a, "update-ref", "-d", LEGACY_REF)
+
+    # the remote still has the stage-1 branch: doctor and `ctx sync --status` say so, the push removes it
+    run_git(a, "push", "-q", "origin", f"{tip}:{LEGACY_REF}")
+    ctx(capsys, "sync", "--setup")  # fetches
+    _, out, _ = ctx(capsys, "doctor")
+    assert f"[WARN] history ref: origin still has the stage-1 branch {LEGACY_REF}" in out
+    _, out, _ = ctx(capsys, "sync", "--status")
+    assert f"origin still has the stage-1 history branch {LEGACY_REF}" in out
+    code, out, _ = ctx(capsys, "sync")
+    assert code == 0 and "pushed history to origin" in out
+    assert f"the stage-1 history branch {LEGACY_REF} was removed from origin" in out
+    assert run_git(bare, "for-each-ref", LEGACY_REF).strip() == ""
+    _, out, _ = ctx(capsys, "doctor")
+    assert f"[  OK] history ref: {HISTORY_REF}" in out

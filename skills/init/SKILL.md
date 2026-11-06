@@ -9,7 +9,8 @@ description: Use when the user asks to set up, enable, initialize or check wscon
 this repository.
 
 1. Run `ctx init`. It creates `.wscontext/config.toml`, chains the Git hooks
-   after any existing ones, and adds a short wscontext block to `CLAUDE.md`.
+   after any existing ones, and adds a short wscontext block to `CLAUDE.md`. Running it again
+   replaces the block in place, which is how an older block is upgraded.
 2. Run `ctx doctor` and explain each line. Every failure comes with its fix.
 3. Tell the user to commit `.wscontext/config.toml` and the `CLAUDE.md` block.
 4. If the user wants the whole team to get the plugin, tell them to add it to
@@ -29,4 +30,6 @@ Reading the output:
 Related commands:
 - `ctx sync --setup [--remote NAME]` turns on sharing through a Git remote
   name, not a URL. Nothing is shared before this.
+- `[retrieval] enabled = false` in `.wscontext/config.toml` turns the brief and
+  `ctx find` off; run `ctx init` again so the block drops its `ctx find` line.
 - `ctx uninstall` removes the hooks and the block and keeps captured data.

@@ -102,12 +102,13 @@ def fetch(store: StorePaths, config: Config, force: bool = False) -> bool:
     return True
 
 
-def push(store: StorePaths, config: Config) -> bool:
+def push(store: StorePaths, config: Config, errors: list[str] | None = None) -> bool:
     """Push the local history; on a rejection fetch, merge and retry once.
 
     When the last fetch saw the remote's stage-1 `LEGACY_REF` branch and the local tip
     contains it, the same atomic push deletes that branch, leased on the fetched tip.
-    Never raises. Returns True when the remote holds the local tip.
+    Never raises. Returns True when the remote holds the local tip. On failure the cause is
+    appended to `errors`, when given.
     """
     remote = config.sync.remote
     if remote is None:
@@ -139,8 +140,10 @@ def push(store: StorePaths, config: Config) -> bool:
                 git("update-ref", "-d", legacy_tracking_ref(remote), legacy, cwd=store.root)
                 log.info("removed the stage-1 history branch %s from %s", LEGACY_REF, remote)
             return True
-    except Exception:
+    except Exception as e:
         log.warning("history push to %s failed", remote, exc_info=True)
+        if errors is not None:
+            errors.append(f"{type(e).__name__}: {e}")
     return False
 
 

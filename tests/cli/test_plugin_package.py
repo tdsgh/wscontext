@@ -47,6 +47,22 @@ def test_skills_state_their_triggers():
         assert front and front[1] == name and front[2].startswith("Use ")
 
 
+def test_skill_text_covers_search_and_the_new_figures():
+    ctx = (ROOT / "skills" / "ctx" / "SKILL.md").read_text()
+    description = re.search(r"^description: (.+)$", ctx, re.M)[1]
+    assert "before starting on a topic" in description and "done or discussed before" in description
+    assert len(description) < 1536
+    for command in ("ctx find", "ctx brief", "ctx rebuild", "ctx eval"):
+        assert command in ctx
+    stats = (ROOT / "skills" / "stats" / "SKILL.md").read_text()
+    for figure in ("stored volume", "size warnings", "the search", "retrieval switch"):
+        assert figure in stats
+
+
+def test_plugin_version_is_0_2_0():
+    assert json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"] == "0.2.0"
+
+
 def test_git_hook_shims_are_in_the_package():
     shims = ROOT / "src" / "wscontext" / "githooks" / "shims"
     assert {p.name for p in shims.iterdir()} == {"hook.sh", "hook-stdin.sh"}

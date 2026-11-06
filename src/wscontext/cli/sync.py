@@ -10,7 +10,7 @@ from wscontext.cli.output import Reply, error
 from wscontext.config import Config, load_config
 from wscontext.gitutil import GitError, git
 from wscontext.history import sync
-from wscontext.history.branch import read_tip
+from wscontext.history.branch import HISTORY_REF, LEGACY_REF, read_tip
 from wscontext.store.paths import StorePaths
 from wscontext.store.records import atomic_write
 
@@ -43,6 +43,14 @@ def set_remote(text: str, name: str) -> str:
     return text[:head.end()] + body + text[body_end:]
 
 
+def _legacy_removed(store: StorePaths, remote: str, before: str | None) -> list[str]:
+    """A line when the remote's stage-1 branch was seen at `before` and its tracking ref is gone now."""
+    if before is not None and read_tip(store, sync.legacy_tracking_ref(remote)) is None:
+        return [f"the stage-1 history branch {LEGACY_REF} was removed from {remote}; "
+                f"history now lives at {HISTORY_REF} there"]
+    return []
+
+
 def _setup(args, store: StorePaths) -> Reply:
     remotes = git("remote", cwd=store.root).split()
     name = args.remote
@@ -59,9 +67,11 @@ def _setup(args, store: StorePaths) -> Reply:
     text = path.read_text(encoding="utf-8") if path.exists() else default_config_toml()
     atomic_write(path, set_remote(text, name).encode("utf-8"))
     lines = [f"sync remote set to {name} in .wscontext/config.toml; commit that file so teammates inherit it"]
+    legacy = read_tip(store, sync.legacy_tracking_ref(name))
     try:
         changed = sync.fetch(store, load_config(store.root), force=True)
         lines.append("history fetched" + (" and materialized" if changed else ": nothing new"))
+        lines += _legacy_removed(store, name, legacy)
     except GitError as e:
         lines.append(f"history fetch failed: {e}")
     lines.append("History is pushed with your own `git push` and by `ctx sync`.")
@@ -79,9 +89,15 @@ def run(args, store: StorePaths, config: Config) -> Reply:
         status = sync.status(store, config)
         lines = [f"remote {status.remote}: {status.ahead} ahead, {status.behind} behind (as of the last fetch)",
                  f"sessions a push would send: {len(pending)}" + (": " + ", ".join(pending) if pending else "")]
+        if read_tip(store, sync.legacy_tracking_ref(config.sync.remote)):
+            lines.append(f"{config.sync.remote} still has the stage-1 history branch {LEGACY_REF} "
+                         "(as of the last fetch); the next push removes it once local history contains it")
         return Reply("\n".join(lines))
     if read_tip(store) is None:
         return Reply("no history yet: nothing to push")
+    legacy = read_tip(store, sync.legacy_tracking_ref(config.sync.remote))
     if sync.push(store, config):
-        return Reply(f"pushed history to {config.sync.remote} ({len(pending)} sessions sent)")
+        lines = [f"pushed history to {config.sync.remote} ({len(pending)} sessions sent)",
+                 *_legacy_removed(store, config.sync.remote, legacy)]
+        return Reply("\n".join(lines))
     return error(f"push to {config.sync.remote} failed; see `git remote -v`, then rerun", args.json)

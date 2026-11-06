@@ -21,14 +21,24 @@ from wscontext.store.records import atomic_write
 
 BLOCK_BEGIN = "<!-- wscontext:begin -->"
 BLOCK_END = "<!-- wscontext:end -->"
-CLAUDE_BLOCK = f"""{BLOCK_BEGIN}
-## wscontext
+FIND_TRIGGER = ("Before starting on a topic, or when asked whether something was done or\n"
+                "discussed before, run `ctx find <words>`.\n")
 
-Past agent sessions in this repository are captured and linked to commits.
-Before changing code you did not write, run `ctx why <file>:<line>` to see the
-session that produced it.
-{BLOCK_END}
-"""
+
+def claude_block(retrieval: bool = True) -> str:
+    """The CLAUDE.md block: triggers only. The `ctx find` trigger is left out while retrieval is off."""
+    return (f"{BLOCK_BEGIN}\n## wscontext\n\n"
+            "Past agent sessions in this repository are captured and linked to commits.\n"
+            "Before changing code you did not write, run `ctx why <file>:<line>` to see the\n"
+            "session that produced it.\n"
+            + (FIND_TRIGGER if retrieval else "")
+            + f"{BLOCK_END}\n")
+
+
+def current_block(text: str) -> str | None:
+    """The wscontext block in `text`, with its trailing newline, or None."""
+    start, end = text.find(BLOCK_BEGIN), text.find(BLOCK_END)
+    return text[start:end + len(BLOCK_END)] + "\n" if start != -1 and end > start else None
 
 
 def launcher_path(data: str | Path) -> Path:
@@ -77,14 +87,15 @@ def default_config_toml() -> str:
     return "\n".join(lines).rstrip("\n") + "\n"
 
 
-def set_block(text: str) -> str:
+def set_block(text: str, retrieval: bool = True) -> str:
     """`text` with the wscontext block added, or replaced in place when already there."""
+    block = claude_block(retrieval)
     start, end = text.find(BLOCK_BEGIN), text.find(BLOCK_END)
     if start != -1 and end > start:
-        return text[:start] + CLAUDE_BLOCK + text[end + len(BLOCK_END):].removeprefix("\n")
+        return text[:start] + block + text[end + len(BLOCK_END):].removeprefix("\n")
     if text and not text.endswith("\n"):
         text += "\n"
-    return text + ("\n" if text else "") + CLAUDE_BLOCK
+    return text + ("\n" if text else "") + block
 
 
 def remove_block(text: str) -> str:
@@ -131,12 +142,12 @@ def run(args, store: StorePaths, config: Config) -> Reply:
                      + ", ".join(report.conflicts))
     claude_md = store.root / "CLAUDE.md"
     before = claude_md.read_text(encoding="utf-8") if claude_md.exists() else ""
-    after = set_block(before)
+    configured = load_config(store.root)
+    after = set_block(before, configured.retrieval.enabled)
     if after != before:
         atomic_write(claude_md, after.encode("utf-8"))
     lines.append("CLAUDE.md block " + ("added" if BLOCK_BEGIN not in before else
                                        "updated" if after != before else "already present"))
-    configured = load_config(store.root)
     if configured.sync.remote:
         try:
             changed = fetch(store, configured, force=True)

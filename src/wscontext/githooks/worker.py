@@ -13,7 +13,7 @@ from wscontext.config import Config, load_config
 from wscontext.githooks.handlers import SHA, commit_links
 from wscontext.gitutil import git
 from wscontext.history import sync
-from wscontext.history.branch import commit_paths
+from wscontext.history.branch import commit_paths, read_tip
 from wscontext.logs import HOOKS_LOG, append_log, now_iso
 from wscontext.store.locks import FileLock
 from wscontext.store.paths import StorePaths, is_safe_name
@@ -109,7 +109,12 @@ def run(action: str, root: str, arg: str = "") -> None:
     entry: dict = {"ts": now_iso(), "event": f"worker:git-{action}", "ok": True}
     try:
         if action == "push":
-            entry["ok"] = sync.push(store, config)  # never raises
+            errors: list[str] = []
+            entry["ok"] = sync.push(store, config, errors)  # never raises
+            if not entry["ok"] and not errors and read_tip(store) is None:
+                entry["ok"], entry["skipped"] = True, "no history yet"
+            elif not entry["ok"]:
+                entry["error"] = errors[0] if errors else "push did not complete"
         elif action in {"checkpoint", "rewrite"}:
             # post-commit and post-rewrite workers overlap on an amend; serialize the merges.
             with FileLock(store.state / "locks" / "githooks.lock", stale_after=300, timeout=120):
