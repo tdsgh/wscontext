@@ -17,6 +17,7 @@ from wscontext.logs import HOOKS_LOG
 from wscontext.stats.data import _index, collect, read_log
 from wscontext.stats.render import _warning_line
 from wscontext.store.paths import StorePaths
+from wscontext.store.records import read_session
 
 OK, WARN, FAIL = "ok", "warn", "fail"
 SHIM_LAUNCHER = re.compile(r"\bl='([^']*)'")
@@ -133,12 +134,23 @@ def _fts5(config: Config) -> dict:
     return _item("search engine", OK, f"SQLite {sqlite3.sqlite_version} with FTS5")
 
 
+def _has_copy(store: StorePaths, session_id: str) -> bool:
+    """Whether a transcript copy was made: a raw copy exists, or finalization recorded its size
+    (the record outlives pruning of raw/; SessionStart writes a record before any copy)."""
+    if any((store.raw / "sessions").glob(f"*-{session_id}.jsonl")):
+        return True
+    try:
+        return read_session(store, session_id).transcript_bytes is not None
+    except (OSError, ValueError):
+        return False
+
+
 def _search_index(store: StorePaths, config: Config) -> dict:
     if not config.retrieval.enabled:
         return _item("search index", OK, "not used: [retrieval] enabled = false")
     ix = _index(store)
     if not ix["present"]:
-        if any((store.records / "sessions").glob("*.json")):
+        if any(_has_copy(store, f.stem) for f in (store.records / "sessions").glob("*.json")):
             return _item("search index", WARN, "missing, although sessions are captured",
                          "run `ctx rebuild` (or any `ctx find`, which builds what is missing)")
         return _item("search index", OK, "not built yet: built on the first capture")

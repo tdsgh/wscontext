@@ -91,3 +91,13 @@ Ask before:
 - Running `ctx init`, `ctx uninstall` or `ctx sync` against any repository
   other than a throwaway one under a test's `tmp_path`.
 - Touching anything matching the repo's secret-shaped gitignore patterns.
+
+<!-- wscontext:begin -->
+## wscontext
+
+Past agent sessions in this repository are captured and linked to commits.
+Before changing code you did not write, run `ctx why <file>:<line>` to see the
+session that produced it.
+Before starting on a topic, or when asked whether something was done or
+discussed before, run `ctx find <words>`.
+<!-- wscontext:end -->

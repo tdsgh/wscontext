@@ -1,0 +1,165 @@
+# The scripted story acceptance/record_corpus.py plays: one headless session per [[task]], in order,
+# in one throwaway repository. Fields:
+#   id       unique, used in the progress output
+#   kind     feature | rejected | bugfix | refactor (documentation only)
+#   branch   switch to this branch first, created from main when it does not exist (default: main)
+#   prompt   what the session is asked to do; the recorder adds the commit instructions
+#   message  the commit message the session must use
+#   merge    optional: after the commit, merge this task's branch into main with --no-ff
+# Every task names its own distinctive topic so that each has one findable answer.
+
+[[task]]
+id = "skeleton"
+kind = "feature"
+prompt = "Create tally.py, a command line expense tracker written with the standard library only. Parse sys.argv by hand, without argparse. Implement `add AMOUNT CATEGORY`, which appends an entry (amount in cents, category, ISO date) to ledger.json in the current directory."
+message = "Add tally CLI with the add command"
+
+[[task]]
+id = "list-command"
+kind = "feature"
+prompt = "In tally.py add a `list` command that prints the ledger entries newest first as a table with aligned columns for date, category and amount."
+message = "Add list command with aligned columns"
+
+[[task]]
+id = "total-command"
+kind = "feature"
+prompt = "In tally.py add a `total` command with an optional --category filter that prints the total spent in dollars with two decimals."
+message = "Add total command with category filter"
+
+[[task]]
+id = "reject-pickle"
+kind = "rejected"
+prompt = "Try replacing the JSON ledger storage with pickle in ledger.pkl and look at how the code reads. Then decide against it: pickle files can run code when loaded and a person cannot read or diff them. Put the code back to JSON in ledger.json. Create DECISIONS.md with a section titled 'Rejected: pickle storage' that states these reasons. Only DECISIONS.md and the restored code should differ from the last commit."
+message = "Record why pickle storage was rejected"
+
+[[task]]
+id = "fix-float-cents"
+kind = "bugfix"
+prompt = "Bug: adding 19.99 stores 1998 cents because the amount is converted with int(float * 100) and truncates. Fix it by parsing the amount with the decimal module, and add tests/test_amount.py that covers 19.99, 0.10 and 5."
+message = "Fix cents truncation by parsing amounts with decimal"
+
+[[task]]
+id = "budget-set"
+kind = "feature"
+branch = "feature-budgets"
+prompt = "Add budgets to tally.py: `budget set CATEGORY AMOUNT` stores a monthly limit in budgets.json, and `budget status` prints the percentage of the limit spent per category."
+message = "Add monthly budgets and budget status"
+
+[[task]]
+id = "budget-warning"
+kind = "feature"
+branch = "feature-budgets"
+merge = true
+prompt = "When `add` pushes a category past 90 percent of its budget, print a warning to stderr that names the category and the percentage."
+message = "Warn when a category passes 90 percent of its budget"
+
+[[task]]
+id = "package-split"
+kind = "refactor"
+prompt = "Refactor tally.py into a package: tally/cli.py for the commands, tally/store.py for reading and writing ledger.json and budgets.json, tally/money.py for amount parsing and formatting, and tally/__main__.py so `python3 -m tally` works. Keep the behaviour identical."
+message = "Split tally.py into a package"
+
+[[task]]
+id = "csv-export"
+kind = "feature"
+prompt = "Add `export --format csv --output FILE` that writes the ledger to a CSV file with a header row."
+message = "Add CSV export"
+
+[[task]]
+id = "fix-empty-list"
+kind = "bugfix"
+prompt = "Bug: `list` crashes with an IndexError when the ledger is empty, because the column width is computed from the first row. Make it print 'No entries.' instead and add a test."
+message = "Fix list crash on an empty ledger"
+
+[[task]]
+id = "recurring"
+kind = "feature"
+prompt = "Add recurring entries: `recur add AMOUNT CATEGORY --every monthly` stores a rule in recurring.json, and `recur apply` posts every rule that is due and remembers the last posting date."
+message = "Add recurring monthly entries"
+
+[[task]]
+id = "reject-sqlite"
+kind = "rejected"
+prompt = "Evaluate a SQLite backend for faster totals. Write bench_totals.py that compares computing a total over 100000 JSON entries with the same query on a sqlite3 table, run it with python3, and keep the numbers you measure. If JSON is fast enough, do not adopt SQLite. Add a section titled 'Rejected: SQLite backend' to DECISIONS.md with the measured timings and the conclusion."
+message = "Record why the SQLite backend was rejected"
+
+[[task]]
+id = "tags"
+kind = "feature"
+prompt = "Add tags: a repeatable --tag option on `add`, stored with the entry, and a --tag filter on `list`."
+message = "Add tags to entries"
+
+[[task]]
+id = "fix-midnight"
+kind = "bugfix"
+prompt = "Bug: entries added shortly before midnight get the wrong day because dates are written in local time. Store UTC timestamps and convert to local time only when printing. Add a test with a fixed clock."
+message = "Fix wrong day near midnight by storing UTC"
+
+[[task]]
+id = "category-validation"
+kind = "refactor"
+prompt = "Move the category name rules into tally/validate.py: lowercase letters, digits and dashes, at most 24 characters. Use it from add, budget set and recur add so all three reject the same names with the same message."
+message = "Extract category validation into one module"
+
+[[task]]
+id = "monthly-report"
+kind = "feature"
+branch = "feature-report"
+prompt = "Add `report monthly` that prints per-category totals for each month, with a bar made of # characters scaled to the largest total."
+message = "Add monthly report with text bars"
+
+[[task]]
+id = "report-since"
+kind = "feature"
+branch = "feature-report"
+merge = true
+prompt = "Add a --since YYYY-MM-DD filter to `report monthly` and reject malformed dates with exit code 2."
+message = "Add --since filter to the monthly report"
+
+[[task]]
+id = "fix-zero-budget"
+kind = "bugfix"
+prompt = "Bug: `budget status` divides by zero when a category's budget is 0. Show 'no limit' for that category instead and add a test."
+message = "Fix division by zero for a zero budget"
+
+[[task]]
+id = "undo"
+kind = "feature"
+prompt = "Add an `undo` command that removes the most recent entry and prints the entry it removed; with an empty ledger it prints 'Nothing to undo.' and exits with code 1."
+message = "Add undo command"
+
+[[task]]
+id = "argparse"
+kind = "refactor"
+prompt = "Replace the hand-written sys.argv handling in tally/cli.py with argparse subcommands. Command names, options and output must stay the same."
+message = "Switch command parsing to argparse"
+
+[[task]]
+id = "csv-import"
+kind = "feature"
+prompt = "Add `import FILE` that reads a CSV in the export format and skips rows that duplicate an existing entry with the same date, amount and category; print how many rows were added and skipped."
+message = "Add CSV import with duplicate detection"
+
+[[task]]
+id = "fix-negative-import"
+kind = "bugfix"
+prompt = "Bug: `import` accepts rows with a negative amount without complaint. Reject the whole file with exit code 2 and a message naming the offending line number, and add a test."
+message = "Reject negative amounts in CSV import"
+
+[[task]]
+id = "completion"
+kind = "feature"
+prompt = "Add `completion bash` that prints a bash completion script for the tally commands and their options."
+message = "Add bash completion script generator"
+
+[[task]]
+id = "readme"
+kind = "feature"
+prompt = "Write README.md describing every command with one example each, taken from the code as it is now."
+message = "Document all commands in the README"
+
+[[task]]
+id = "currency-symbol"
+kind = "feature"
+prompt = "Add a TALLY_CURRENCY environment variable read once in tally/money.py that sets the currency symbol used when printing amounts; the default stays the dollar sign."
+message = "Add configurable currency symbol"

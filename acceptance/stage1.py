@@ -324,6 +324,10 @@ def capture_resume(acc: Acc) -> str:
 def capture_compaction(acc: Acc) -> str:
     repo = acc.repo("compact")
     init_repo(acc, repo)
+    config = repo / ".wscontext" / "config.toml"  # snapshots are off by default since stage 2
+    text = config.read_text()
+    check("precompact_snapshot = false" in text, "config.toml lacks capture.precompact_snapshot")
+    config.write_text(text.replace("precompact_snapshot = false", "precompact_snapshot = true"))
     first = acc.claude(repo, "Create the file a.txt containing exactly: a. Reply done.")
     sid = first.session_id
     second = acc.claude(repo, "/compact", session=sid, resume=True)
@@ -531,8 +535,8 @@ def sharing(acc: Acc) -> str:
     acc.wait_ended(repo, sid)
     acc.checkpoint(repo, acc.git(repo, "rev-parse", "HEAD"))
     acc.git(repo, "push", "-q", "origin", "main")
-    wait_for(lambda: "refs/heads/wscontext/history" in acc.git(repo, "ls-remote", "origin"),
-             "the pre-push hook to push the history branch")
+    wait_for(lambda: "refs/wscontext/history" in acc.git(repo, "ls-remote", "origin"),
+             "the pre-push hook to push refs/wscontext/history")
     acc.ctx(repo, "sync")
     status = acc.ctx(repo, "sync", "--status").stdout
     check("0 ahead" in status, f"sync --status after the push: {status.splitlines()[0]}")

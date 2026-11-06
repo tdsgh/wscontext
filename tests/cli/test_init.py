@@ -394,6 +394,28 @@ def test_doctor_flags_a_block_that_does_not_match_the_switch(repo, opts, capsys)
     assert "lacks the `ctx find` trigger" in _doctor_line(out, "claude.md block")
 
 
+def test_doctor_index_not_built_yet_while_sessions_have_no_copy(repo, opts, capsys):
+    from cli_support import add_session
+    ctx(capsys, *opts, "init")
+    add_session(StorePaths.resolve(repo), "sess-one", transcript=False)
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    assert "[  OK] search index: not built yet" in _doctor_line(out, "search index")
+
+
+def test_doctor_warns_on_missing_index_after_raw_copies_were_pruned(repo, opts, capsys):
+    from cli_support import add_session
+    from wscontext.store.records import read_session, write_session
+    ctx(capsys, *opts, "init")
+    store = StorePaths.resolve(repo)
+    add_session(store, "sess-one", transcript=False)
+    record = read_session(store, "sess-one")
+    record.transcript_bytes = {"stored": 10}
+    write_session(store, record, Config())
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    assert "[WARN] search index: missing, although sessions are captured" in out
+    assert not list((store.raw / "sessions").glob("*"))
+
+
 def test_doctor_reports_index_lag_and_size_warnings(repo, opts, capsys):
     from cli_support import add_session
     ctx(capsys, *opts, "init")
