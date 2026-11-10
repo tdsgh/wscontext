@@ -112,6 +112,9 @@ through the working tree.
 
 **Reasoning.** [design-rationale.md § Why history lives on an orphan branch](design-rationale.md#why-history-lives-on-an-orphan-branch)
 
+Superseded by ADR-031 for the branch name and location. The rest of this
+entry still holds.
+
 ### ADR-008 — Sync is opt-in and pushes only alongside `git push` or on `ctx sync`
 
 **Decision.** History stays local until a sync remote is set in
@@ -128,6 +131,9 @@ with the user's own pushes, and `ctx sync` pushes on demand. Session start and
 **Guardrail.** Claude Code hooks never push.
 
 **Reasoning.** [design-rationale.md § Why sync is opt-in](design-rationale.md#why-sync-is-opt-in)
+
+Superseded by ADR-031 for the ref that is fetched and pushed. The rest of
+this entry still holds.
 
 ### ADR-009 — Hooks never block the agent or a commit
 
@@ -166,6 +172,9 @@ superseded or stale results, and is framed as retrieved data.
 - There is no separate `harness` executable.
 
 **Reasoning.** [design-rationale.md § Why results carry freshness and supersession](design-rationale.md#why-results-carry-freshness-and-supersession)
+
+Extended in stage 2 with the `brief` and `eval` commands. The rest of this
+entry still holds.
 
 ### ADR-012 — Retrieval is push plus pull, and adoption is measured
 
@@ -450,3 +459,140 @@ write none; a squash is checkpointed by the later `git commit`.
   (src/wscontext/githooks/handlers.py:138-151).
 - With reflogs disabled, a fast-forward onto someone else's merge commit whose
   first parent is the local `HEAD` is checkpointed as local.
+
+### ADR-031 — Shared history lives at `refs/wscontext/history`, outside `refs/heads/`
+
+**Decision.** The history ref is `refs/wscontext/history`. Remote-tracking
+copies live at `refs/wscontext/remotes/<remote>/history` and
+`refs/wscontext/remotes/<remote>/legacy-history`
+(src/wscontext/history/branch.py:18-20; src/wscontext/history/sync.py:33-41).
+
+**Implications.**
+- A plain clone or `git fetch --prune` neither downloads nor deletes it. The
+  Git host does not list it among the branches, and branch protection does not
+  apply to it.
+- Before it writes, every history writer moves a local
+  `refs/heads/wscontext/history` (the stage-1 location) into the new ref. It
+  union-merges the old ref into the new one, then deletes the old ref by
+  compare-and-swap: the delete applies only if the old ref has not changed
+  since it was read (src/wscontext/history/branch.py:239-259).
+- A fetch reads both locations on the remote. A push writes the new ref. In
+  the same atomic push, it deletes the remote's old branch, but only once the
+  local tip contains that branch (src/wscontext/history/sync.py:66-141).
+- A teammate still on stage 1 can recreate the old branch. The next fetch then
+  merges it, and the next push deletes it again.
+
+**Guardrail.** The code that reads the old location runs on every fetch; it is not dead code.
+
+### ADR-032 — Stored copies are reduced per entry kind, for new captures only
+
+**Decision.** The transcript adapter sorts every transcript line into a kind
+of entry, and a list for each kind names what is dropped and what is kept
+once. Everything the list does not name is kept, and sessions captured before
+this change are never re-copied.
+
+**Implications.**
+- "Kept once" means stored only on the first line that carries the field,
+  and again when its value changes.
+- Dropped: bookkeeping lines, the signatures of thinking blocks, every usage
+  key except the four token keys, `wireToolInputs`, all of `toolUseResult`
+  except `agentId`, the body text of `origin`, and the `rendered` fields
+  (src/wscontext/adapters/claude_code.py:23-37, 228-264).
+- Kept once per session, and again when the value changes: the fields in
+  `KEEP_ONCE` (src/wscontext/adapters/claude_code.py:37).
+- Re-copying an already shared session in the smaller form would not take
+  effect: the merge keeps the larger blob, so the smaller copy loses
+  (src/wscontext/history/branch.py:203-204).
+- Tool results are kept whole by default. The committed setting
+  `capture.tool_result_max_chars` cuts each result at that many characters and
+  marks it as cut.
+- PreCompact snapshots are off by default (`capture.precompact_snapshot`).
+- When Claude Code adds a new line type or attachment type, it is added by name
+  to the adapter's lists. `ctx show`, `ctx why`, the index, the brief and the
+  turn statistics read only what the adapter parses.
+- Size warnings apply to each stored session and to each store. The local store
+  and shared history are counted separately (src/wscontext/config.py:54-57).
+
+**Guardrail.** A rule drops only what it names explicitly.
+
+### ADR-033 — `raw/` is a local cache of the history ref, pruned by retention
+
+**Decision.** The `raw/` files of sessions older than `retention.raw_days`
+are removed (pruned). A file is pruned only when its final copy is on the
+local history ref and, with sync on, also on a shared tip: a remote's history
+as of the last fetch or push. Objects on the ref are never pruned.
+
+**Implications.**
+- `state/pruned.json` lists the pruned paths. When a fetch copies shared
+  history into `raw/` and `records/` (materialize), it never writes these
+  paths back (src/wscontext/capture/worker.py:228-274).
+- `ctx show`, `ctx why` and the index read a pruned copy from the ref. The
+  index rows stay.
+- Session and commit records are kept. `ctx forget` works on a pruned
+  session the same way as on any other (→ ADR-026).
+- Removing shared history still requires a rewrite (→ ADR-007).
+
+### ADR-034 — Idle sessions are finalized by a detached `sweep` worker
+
+**Decision.** `SessionStart`, `post-commit` and the `ctx` read commands spawn
+the `sweep` worker in two cases: a session has been idle longer than
+`capture.stale_session_minutes`, or the last sweep ran more than a day ago.
+The sweep runs a session's final step from the original transcript. When the
+original is gone, it uses the raw copy.
+
+**Implications.**
+- The sweep merges its counts into the session's existing record. When a
+  finalized session continues, it becomes active again and is linked to later
+  commits (src/wscontext/capture/handlers.py:65-72).
+- The record's `ended_by` is `idle` and `ended_at` is the last activity
+  (src/wscontext/store/records.py:52).
+- Nothing runs on a timer (→ ADR-010). A sweep that changes nothing writes no
+  hook-log line.
+
+### ADR-035 — The brief reads the index read-only inside the `SessionStart` hook
+
+**Decision.** `capture/brief.py` opens `index/history.db` read-only. It does
+not first index records that are not in the index yet (the gap check,
+→ ADR-010). It returns nothing when the index is missing. The hook returns
+the brief as `hookSpecificOutput.additionalContext`, within 500 tokens. It
+does so on `startup`, `clear` and `compact`, never on `resume` or `fork`
+(src/wscontext/capture/brief.py:13,56; src/wscontext/capture/handlers.py:18).
+
+**Implications.**
+- The brief reaches the agent only when the hook finishes inside
+  `hooks.time_budget_ms`.
+- Code reachable from the hook stays standard-library only (→ ADR-016).
+- Workers and read commands keep the index current (→ ADR-010).
+
+### ADR-036 — One setting switches the brief and search off; the CLAUDE.md block follows it
+
+**Decision.** `[retrieval] enabled` turns off the brief and `ctx find`
+together. `[retrieval] brief` turns off only the brief
+(src/wscontext/config.py:47-50). With retrieval off, `ctx init` writes the
+CLAUDE.md block without the line that tells the agent when to run `ctx find`
+(src/wscontext/cli/init.py:28-35). `ctx doctor` flags a CLAUDE.md block that
+does not match `[retrieval] enabled` (src/wscontext/cli/doctor.py:182-190).
+
+**Implications.**
+- Capture, `ctx why` and statistics run either way. Each session record says
+  whether retrieval was on (src/wscontext/store/records.py:53).
+- The setting is made in the committed config, before a run (→ ADR-029).
+
+### ADR-037 — `ctx find` lists a matching commit right after its session
+
+**Decision.** When a commit matches a search and a session it is linked to is
+among the results, the commit is listed directly after the best-ranked such
+session. `--kind session` turns this off
+(src/wscontext/index/search.py:64-80).
+
+**Implications.**
+- A session contains its own commit's message, because the session ran the
+  `git commit` command. Without this rule, a commit never ranks above its
+  session.
+- Each commit listed this way moves the other sessions below it down one
+  place. These commits count toward the result limit.
+- The `score` field in `ctx find --json` is a bm25 score, where lower is
+  better. A commit listed this way can score worse than the result after it,
+  so the scores are not always in order.
+
+**Guardrail.** A commit whose score is out of order right after a session is intended, not a sort bug.

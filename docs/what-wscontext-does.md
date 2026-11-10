@@ -5,8 +5,8 @@ it improves development, and how it affects Claude Code. The system itself is
 described in [architecture.md](architecture.md); decisions are in
 [adr.md](adr.md).
 
-Stage 1 is built; stages 2 to 4 are designed. Everything below marked stage 2
-or later describes the designed plugin. The effects on quality, speed and cost
+Stages 1 and 2 are built. Stages 3 and 4 are designed. Everything below marked
+stage 3 or later describes the designed plugin. The effects on quality, speed and cost
 are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
 ([roadmap.md](roadmap.md)), not measured results.
 
@@ -35,7 +35,8 @@ are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
 **Share history with teammates and other machines** (stage 1, opt-in)
 - `ctx sync --setup` names a remote, either `origin` or a separate private one.
   After that, history travels with each normal `git push`.
-- A fresh clone plus `ctx init` recovers the whole shared history.
+- A fresh clone plus `ctx init` recovers the whole shared history. A plain
+  clone alone does not download it.
 
 **Monitor everything** (stage 1, more views in later stages)
 - `ctx stats` reports on collected data, Claude Code turns, `ctx` calls and
@@ -43,8 +44,18 @@ are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
 - From stage 3 it also reports on the indexed code: files, symbols and edges by
   language.
 
-**Search past work and code** (stages 2–4)
-- `ctx find "<topic>"` answers "has this been done or discussed before?"
+**Search past work** (stage 2)
+- `ctx find "<topic>"` answers "has this been done or discussed before?" It
+  lists the past sessions and commits that discuss the topic. You can narrow
+  the list by branch, author, date, file or kind.
+- When a session starts, the agent gets a short brief of recent related work.
+- A conversation that was closed without a clean end is still finalized and
+  shared. This happens once it has been idle for longer than the configured
+  staleness window.
+- Stored transcripts keep only what wscontext reads. Local copies older than
+  the retention period are removed.
+
+**Search code** (stages 3–4)
 - `ctx code <name>` answers "where is it defined?"
 - `ctx impact <symbol>` answers "what could this change break?"
 - Stage 4 adds decision records with superseded/active status, plus
@@ -58,8 +69,8 @@ are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
   ([wscontext-phase-1.md](hist/wscontext-phase-1.md) §6–7).
 - **Less rediscovery.** Past decisions and rejected approaches are searchable,
   so neither the developer nor the agent re-litigates them.
-- **Team memory without a server.** History is shared through an orphan Git
-  branch, and every machine rebuilds its own indexes
+- **Team memory without a server.** History is shared through a Git ref
+  that is not a branch, and every machine rebuilds its own indexes
   ([architecture.md](architecture.md#topology)).
 - **Safe by default.**
   - Hooks never block a commit or a session; any failure just means missing
@@ -105,10 +116,10 @@ are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
 
 | Adds | Saves |
 |---|---|
-| About 500 tokens per session for the session-start brief (stage 2+) | Tokens spent on file dumps and repeated grep/read rounds |
+| About 500 tokens per session for the session-start brief | Tokens spent on file dumps and repeated grep/read rounds |
 | Up to about 1,500 tokens per `ctx` call (budgeted, with `--limit` and `--full` overrides) | Turns spent rediscovering context or redoing rejected approaches |
 | LLM calls for distilling decisions, after sessions end and off the critical path (stage 4 only) | |
-| Local disk for transcripts and indexes (raw transcripts kept 180 days by default) | |
+| Local disk for the transcripts (only what wscontext reads) and the search index. By default, raw copies older than 180 days are removed locally | |
 
 Embeddings run locally, so search adds no API spend.
 

@@ -77,7 +77,8 @@ start, the `ctx` skill and CLAUDE.md triggers for search.
   - *Control:* a size figure per session and per store with a warning in
     `ctx doctor` and `ctx stats`; `retention.raw_days` enforced on the local
     store (records kept); shared history moves outside `refs/heads/` so a
-    plain clone does not fetch it (supersedes ADR-007, ADR-008 in part).
+    plain clone does not fetch it (supersedes ADR-007, ADR-008 in part
+    → ADR-031).
 - **Abandoned sessions:** a session that never sends `SessionEnd` is finalized
   once idle past the staleness window: final copy, counts and history commit.
 - **Benchmark switch:** a configuration setting turns the brief and search off,
@@ -89,8 +90,14 @@ start, the `ctx` skill and CLAUDE.md triggers for search.
 - **New agent:** `py-index`.
 - **Gate:** the stage's acceptance scenarios pass, the right session or
   commit is in the top 3 for at least 15 of the 20 questions, and a stored
-  session is at most a set share of its source transcript, measured on the
-  eval corpus.
+  session is at most a set share (30%) of the size of its source transcript,
+  measured on the eval corpus.
+- **Gate result (2026-11-06):** passed. The offline suite was green.
+  `acceptance/stage1.py` was green. `acceptance/stage2.py` passed 10 of 10
+  scenarios, none of them manual. The VS Code checklist passed.
+  `ctx eval --min 15` put the right result in the top 3 for 20 of 20 questions.
+  On the eval corpus, stored sessions took 15.0% of the size of their source
+  transcripts. Deviations are listed in the build plan's closing notes.
 
 ## Stage 3 — Code graph
 

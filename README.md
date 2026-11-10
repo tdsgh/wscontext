@@ -1,9 +1,10 @@
 # wscontext
 
 A local harness for Claude Code that captures agent sessions, links them to Git
-commits, and answers why a line of code exists. Stage 1 of
-[docs/roadmap.md](docs/roadmap.md) is built: capture, commit linking, history
-sharing, `ctx why/sessions/show/forget`, `ctx stats`. Architecture:
+commits, and answers why a line of code exists. Stages 1 and 2 of
+[docs/roadmap.md](docs/roadmap.md) are built: capture, commit linking, history
+sharing, history search, the session brief, `ctx why/sessions/show/forget`,
+`ctx find/brief`, `ctx stats`. Architecture:
 [docs/architecture.md](docs/architecture.md).
 
 Prerequisites: Git, Claude Code with plugin support, [uv](https://docs.astral.sh/uv/).
@@ -17,7 +18,8 @@ The marketplace and the plugin must both be named `wscontext`. A local-folder
 marketplace runs the plugin straight from that folder; code edits take effect
 only after `.claude-plugin/plugin.json` changes (bump the version). The first
 session builds the plugin's environment in the data directory; the build runs in
-the background and hooks never wait for it.
+the background and hooks never wait for it. A session that is already running
+keeps the old plugin until you run `/reload-plugins` or restart the session.
 
 `ctx` is on `PATH` only inside Claude Code's Bash tool and `!` commands. From a
 terminal, use `~/.claude/plugins/data/wscontext-wscontext/bin/ctx` (written by
@@ -47,7 +49,37 @@ and keeps captured data.
 Nothing is shared until `--setup`. After that history goes out with your own
 `git push` (the `pre-push` hook) and on `ctx sync`. Commit the changed
 `.wscontext/config.toml` so teammates inherit the remote. A fresh clone plus
-`ctx init` recovers shared history.
+`ctx init` recovers shared history. Shared history is stored at
+`refs/wscontext/history`. This ref is not a branch, so a plain clone does not
+download it.
+
+wscontext fetches and pushes history in background Git processes. These
+processes cannot ask you for a credential. Use a credential that works without
+a prompt: an SSH key loaded in the SSH agent, or a Git credential helper.
+Otherwise fetches and pushes fail, and `ctx doctor` warns.
+
+## Search past work
+
+    ctx find <words> [--branch B] [--author A] [--since 7d] [--file F] [--kind session|commit]
+    ctx brief                  # the brief a session starting now would get
+    ctx rebuild                # delete the search index and rebuild it
+    ctx eval [--corpus DIR] [--questions FILE] [--min N]   # score search on the fixed corpus
+
+A session gets the brief when a new session starts, after `/clear` and after
+compaction. A resumed session does not get it.
+
+Setting `[retrieval] enabled = false` in `.wscontext/config.toml` turns off both
+the brief and `ctx find`. Then run `ctx init` again, so that the CLAUDE.md
+block no longer has its `ctx find` line.
+
+## Retention
+
+Raw transcripts older than `retention.raw_days` (default 180) are removed from
+the local store, but only after they are on the history ref. Session and commit
+records stay. The sizes that trigger a warning are set by
+`store.session_warn_bytes` and `store.store_warn_bytes`. Tool results are kept
+whole unless you set `capture.tool_result_max_chars`, which cuts each result at
+that many characters. All defaults are in `.wscontext/config.toml`.
 
 ## Statistics
 

@@ -54,8 +54,9 @@ before Alpha starts sharing history between machines.
 
 **The operator and the agent can see:**
 - For a topic in plain words: the past sessions and commits that discuss it,
-  best match first, each with its date, branch, author, the matching passage
-  and the command that opens it in full.
+  most relevant first, each with its date, branch, author, the matching
+  passage and the command that opens it in full. A matching commit comes
+  right after the session that produced it.
 - Matches from what was asked, what the agent replied, and commit messages.
 - Results narrowed by branch, author, date, file touched, or kind (session or
   commit).
@@ -276,35 +277,37 @@ so every later gate scores the same history.
    smaller copy apply to new captures only? Answered: new captures only; a
    smaller re-copy would lose to the full copy already shared (§ 8).
 4. In the off arm of a comparison, should the CLAUDE.md block's search triggers
-   also be withheld, or only the brief and search answers?
+   also be withheld, or only the brief and search answers? Answered: withheld
+   too. With the benchmark switch (§ 9) off, the CLAUDE.md block is written
+   without the search trigger. The health check flags a CLAUDE.md block that
+   does not match the switch.
 5. Is a session that went idle, was finalized, and is then resumed still linked
-   to commits made after it resumes? Provisionally yes, as for any active
-   session.
+   to commits made after it resumes? Answered: yes. When a finalized session
+   continues, it becomes active again. It is linked to commits made after it
+   resumes, and it is finalized again later.
 6. What is kept of a large tool result — in full, cut to a fixed size, or only
    a reference when the content can be read back from Git, such as a file
-   read at a known commit?
+   read at a known commit? Answered: kept in full by default. The transcript
+   also holds a second, structured copy of each tool result; that copy is
+   dropped. A setting in the committed configuration can cut long results at a
+   set number of characters and mark them as cut. The setting applies to new
+   captures only.
 7. Is the compaction snapshot needed at all? It is the stage-1 open question
    on whether compaction removes entries from the transcript file; the answer
-   decides whether snapshots stay, become opt-in, or go.
+   decides whether snapshots stay, become opt-in, or go. Answered: snapshots
+   become opt-in and are off by default. In the one session measured, every
+   entry in the snapshot was also in the final copy.
 8. What share of its source transcript may a stored session take, for the
    gate, and what size limits per session and per store trigger a warning?
-9. What does each entry we keep actually need? Open, to be answered by
-   reviewing real stored entries kind by kind — prompts, replies, tool calls,
-   tool results, subagent entries — for duplicated content and fields nothing
-   reads. The one session measured so far shows, beyond bookkeeping, about a
-   fifth of the file in:
-   - a structured second copy of each tool result, about twice the size of
-     the result itself;
-   - a second copy of each tool call's input;
-   - a reply split over several entries that repeats its usage figures on
-     each;
-   - fields that repeat one value on every entry (session, working directory,
-     branch, client version, model, entry point);
-   - per-entry classifier and permission metadata.
-   The answer is a list, per entry kind, of what is kept, what is kept once
-   per session, and what is dropped, checked against everything search,
-   `ctx show`, `ctx why`, the brief and the turn statistics read. Questions 6
-   and 7 are decided as part of the same review.
+   Answered: for the gate, stored sessions may take at most 30% of the size of
+   their source transcripts, measured over the eval corpus as a whole. A
+   warning starts at 10 MB per stored session and at 1 GB per store. The local
+   store and shared history are counted separately.
+9. What does each entry we keep actually need? Answered: a list for each kind
+   of entry. The list says what is kept, what is dropped, and what is stored
+   only once per session: on the first entry that carries it, and again when
+   its value changes. The list was approved at a review of real stored
+   entries. Entry types and fields that the list does not name are kept.
 
 ## 15. Beyond stage 2
 

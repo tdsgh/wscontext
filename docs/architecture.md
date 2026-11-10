@@ -4,8 +4,8 @@
 What wscontext is, today. Decisions behind it are in [adr.md](adr.md); the
 reasoning behind those is in [design-rationale.md](design-rationale.md).
 
-Stage 1 is built; § Stages tracks what each later stage delivers. Parts planned
-for stages 2 to 5 are marked.
+Stages 1 and 2 are built. § Stages tracks what each later stage delivers.
+Parts planned for stages 3 to 5 are marked.
 
 ## Purpose and data flow
 
@@ -23,7 +23,7 @@ machine except through an opt-in Git remote.
         │                                                + git log
         └───────────────────────────────── ctx output ◀────────────────────────────────┘
 
- raw/ + records/ ◀──── wscontext/history orphan branch ────▶ sync remote   (opt-in)
+ raw/ + records/ ◀──── refs/wscontext/history ────▶ sync remote   (opt-in)
 ```
 
 History flows down the left path, code structure down the right; they meet only
@@ -78,39 +78,89 @@ existing ones) and the CLAUDE.md block. The store is split (→ ADR-004):
 
 <git-common-dir>/wscontext/                        local, shared by all worktrees
   raw/sessions/<date>-<session-id>.jsonl           redacted transcripts           synced
-  raw/sessions/<date>-pc<stamp>-<session-id>.jsonl PreCompact snapshots           host-local
+  raw/sessions/<date>-pc<stamp>-<session-id>.jsonl PreCompact snapshots (opt-in)  host-local
   raw/subagents/<session-id>/<agent-id>.jsonl      redacted subagent transcripts  synced
   records/sessions/<session-id>.json               normalized sessions            synced
   records/checkpoints/<sha>.json                   commit ↔ session links         synced
-  index/history.db                                 FTS5 (+ vectors) (stage 2)     derived
+  index/history.db                                 FTS5 (vectors: stage 4)        derived
   index/graph.db                                   code graph (stage 3)           derived
-  state/    active.json, turns/<session>.json, materialized.json, last_fetch, locks/, rewrites/   host-local
-  logs/     hooks.jsonl, ctx-calls.jsonl (one rotated generation each, .1)                        host-local
+  state/    active.json, turns/<session>.json, materialized.json, pruned.json, last_fetch, last_sweep, locks/, rewrites/   host-local
+  logs/     hooks.jsonl, ctx-calls.jsonl (one rotated generation each, .1)                                                  host-local
 ```
 
-**Per sync remote — the history branch.** `wscontext/history` is an orphan
-branch holding `raw/` and `records/` only, written with Git plumbing
-(→ ADR-007). It is pushed only when sync is configured, alongside the user's
-`git push` or on `ctx sync` (→ ADR-008). A fresh clone recovers history with
-`ctx init`, which fetches the branch; indexes rebuild on the first query
-(→ ADR-010).
+- For new captures, the stored transcript is reduced: a list for each kind of
+  entry names what is dropped and what is stored only once (→ ADR-032).
+  Copies captured in stage 1 are not trimmed again.
+- `raw/` is a local cache of the history ref (→ ADR-033). The `raw/` files of
+  sessions older than `retention.raw_days` are removed (pruned). A file is
+  pruned only when its final copy is on the local ref and, with sync on, also
+  on a remote's history as of the last fetch or push (a shared tip). The
+  pruned files' paths on the ref go into `state/pruned.json`. The step that
+  copies fetched history into `raw/` and `records/` (materialize) never writes
+  these files back (src/wscontext/capture/worker.py:228-274). `ctx show`,
+  `ctx why` and the index read a pruned copy from the ref. The index rows of a
+  pruned session stay.
+
+**Per sync remote — the history ref.** `refs/wscontext/history` holds `raw/`
+and `records/` only, written with Git plumbing (→ ADR-007, ADR-031). It sits
+outside `refs/heads/`, so a plain clone or fetch does not download it
+(src/wscontext/history/branch.py:18). It is pushed only when sync is
+configured, alongside the user's `git push` or on `ctx sync` (→ ADR-008).
+Remote-tracking copies live under `refs/wscontext/remotes/<remote>/`
+(src/wscontext/history/sync.py:33-41). A fresh clone recovers history with
+`ctx init`, which fetches the ref; indexes rebuild on the first query
+(→ ADR-010). Fetches and pushes run in background workers that cannot ask for
+a credential. Sharing therefore needs a credential that works without a prompt:
+an SSH key loaded in the SSH agent, or a Git credential helper.
 
 ### Hook events
 
 | Hook | Fires when | Records |
 |---|---|---|
-| `SessionStart` | A session starts, resumes, clears or compacts | Session record (ID, branch, HEAD, start, author) kept on resume; marks the session active for the worktree; detached history fetch when sync is configured; injects the brief (stage 2+) |
-| `UserPromptSubmit` | A prompt is sent | Turn start time |
+| `SessionStart` | A session starts, resumes, clears or compacts | Session record (ID, branch, HEAD, start, author) kept on resume; marks the session active for the worktree; detached history fetch when sync is configured; spawns the sweep worker, which finalizes idle sessions, when a session is idle or the last sweep ran more than a day ago; returns the brief as additional context on `startup`, `clear` and `compact`, never on `resume` or `fork` (src/wscontext/capture/handlers.py:18) |
+| `UserPromptSubmit` | A prompt is sent | Turn start time; if the session was finalized while idle, marks it active again |
 | `PostToolUse` (all tools, async) | A tool call finishes | Tool name, file path for edits, `ctx` invocation and output size |
-| `PreCompact` | Before context compaction | Transcript snapshot while `capture.precompact_snapshot` is on (default); open question in [wscontext-phase-1.md](hist/wscontext-phase-1.md) |
-| `Stop` | A turn ends | Turn end time; detached worker copies and redacts the transcript |
-| `SessionEnd` | A session ends | Deactivates the session; detached worker writes the final redacted copy, subagent copies, session record with counts and turns, and commits them to the history branch |
+| `PreCompact` | Before context compaction | Transcript snapshot only while `capture.precompact_snapshot` is on (off by default, src/wscontext/config.py:34) |
+| `Stop` | A turn ends | Turn end time; detached worker copies, redacts and reduces the transcript, then re-indexes the session |
+| `SessionEnd` | A session ends | Deactivates the session; detached worker writes the final redacted copy, subagent copies, session record with counts and turns, commits them to the history ref, and re-indexes the session |
 | Git `prepare-commit-msg`, `commit-msg` | A commit is being made | `AI-Session` trailer per active session in this worktree; skipped during rebase and `am`; `prepare-commit-msg` skips an empty message (→ ADR-025) |
-| Git `post-commit` | After a commit | Detached worker writes the checkpoint and commits it to the history branch, when `HEAD` has trailers |
+| Git `post-commit` | After a commit | Detached worker writes the checkpoint and commits it to the history ref, when `HEAD` has trailers; spawns the sweep worker under the same condition as `SessionStart` |
 | Git `post-rewrite` | After amend or rebase | Queues old to new pairs; detached worker writes checkpoints for the rewritten SHAs |
-| Git `pre-push` | Before a push | Detached worker pushes `wscontext/history` when sync is configured; the shim runs wscontext only if the chained original exited 0 |
+| Git `pre-push` | Before a push | Detached worker pushes `refs/wscontext/history` when sync is configured; the shim runs wscontext only if the chained original exited 0 |
 | Git `post-merge` | Merge | A merge commit created here that carries `AI-Session` trailers is checkpointed like `post-commit`; a fast-forward and `--squash` write nothing. The graph refresh lands in stage 3 |
 | Git `post-checkout` | Branch switch | Installed; the handler is a no-op until stage 3 |
+| `ctx` read commands | `why`, `sessions`, `show`, `stats`, `find`, `brief` | Throttled history fetch when sync is configured; spawns the sweep worker under the same condition as `SessionStart` (src/wscontext/cli/main.py:31) |
+
+### Search, brief and idle sessions
+
+- **Index.** One SQLite file, `index/history.db`. One FTS5 table holds
+  exchanges (prompt, reply, tool calls) and linked commit messages
+  (src/wscontext/index/db.py:19-21). When a session's source changes, the
+  whole session is re-indexed (src/wscontext/index/build.py:1-5). The capture
+  worker re-indexes a session after each copy. The fetch worker refreshes the
+  index after a fetch that changed history. `ctx find`, `ctx brief` and
+  `ctx eval` first index any records the index does not have yet (→ ADR-010,
+  ADR-013). `ctx rebuild` deletes the index and builds it again.
+- **Ranking.** Search matches words only. bm25 ranks a match in the prompt
+  highest, then in the commit message, then in the reply, then in tool calls
+  (src/wscontext/index/search.py:8). Common English words are dropped from the
+  query, unless no other word is left. A search first looks for rows that
+  contain every word; words found in half the indexed rows or more are left
+  out of this step. If that finds fewer rows than the limit, rows that match
+  any word fill the rest. A matching commit is listed right after the
+  best-ranked session it is linked to (→ ADR-037)
+  (src/wscontext/index/search.py:47-80).
+- **Brief.** Inside the `SessionStart` hook, `capture/brief.py` opens the index
+  read-only and builds a brief of about 500 tokens. It returns nothing when the
+  index is missing (→ ADR-035). The `[retrieval]` settings turn the brief and
+  search off (→ ADR-036).
+- **Idle sessions.** The `sweep` worker finalizes active sessions that have
+  been idle longer than `capture.stale_session_minutes`. Then it prunes
+  `raw/`. A sweep that starts while another one runs does nothing
+  (src/wscontext/capture/worker.py:277-293; → ADR-034).
+- **Eval.** `ctx eval` scores search on a fixed corpus in `eval/stage2/`: the
+  sessions, the questions, and a Git bundle of the repository the scripted
+  sessions worked in. `acceptance/record_corpus.py` recorded the corpus once.
 
 ## Data model
 
@@ -119,6 +169,10 @@ Every record carries a schema version and the Git author who produced it.
 - **Session** — ID, agent name, branch, HEAD at start and end, start and end
   time, worktree, files touched, subagent IDs, and per-session counts: turns,
   tool calls by tool, `ctx` calls by command, turn tokens where available.
+  Schema 2 adds: how the session ended (`session-end` or `idle`), whether
+  retrieval was on, how many brief tokens it was given, and transcript sizes in
+  bytes (source, stored, and stored per kind of entry). Readers still accept
+  schema 1 (src/wscontext/store/records.py:36-52).
 - **Event** — one prompt, assistant message or tool call in a session, with role
   and timestamp. Lives in the raw transcript; the index stores exchanges
   (prompt plus response).
@@ -136,30 +190,31 @@ Every record carries a schema version and the Git author who produced it.
 
 | Component | What it is | Where | Stage |
 |---|---|---|---|
-| `ctx` CLI | Single entrypoint for agent and admin commands (→ ADR-011); internal `hook`, `worker`, `git-hook` (→ ADR-027) | `src/wscontext/cli/` | 1+ |
+| `ctx` CLI | Single entrypoint for agent and admin commands, including `find`, `brief`, `rebuild` and `eval` (→ ADR-011); internal `hook`, `worker`, `git-hook` (→ ADR-027) | `src/wscontext/cli/` | 1+ |
 | Config | Loads `.wscontext/config.toml` into dataclasses (→ ADR-016) | `src/wscontext/config.py` | 1 |
 | Store | Resolves the store under the Git common dir; reads and writes records | `src/wscontext/store/` | 1 |
 | Hook handlers | One handler per Claude Code event; exit 0, bounded time (→ ADR-009) | `src/wscontext/capture/` | 1 |
 | Transcript adapter | Versioned parser of Claude Code transcripts (→ ADR-002) | `src/wscontext/adapters/` | 1 |
 | Redactor | Pattern rules applied before every write (→ ADR-006) | `src/wscontext/redact/` | 1 |
-| History branch | Plumbing writer, union merge, fetch and push (→ ADR-007, ADR-008) | `src/wscontext/history/` | 1 |
+| History ref | Plumbing writer, union merge, fetch and push of `refs/wscontext/history` (→ ADR-007, ADR-008, ADR-031) | `src/wscontext/history/` | 1 |
 | Git hooks | Shims plus handlers for trailer, checkpoint, rewrite, push; chaining installer | `src/wscontext/githooks/` | 1 |
-| Stats | `ctx stats` views over records, logs and indexes (→ ADR-018, ADR-019) | `src/wscontext/stats/` | 1+ |
-| History index | FTS5, then vectors; incremental with query-time gap check (→ ADR-013) | `src/wscontext/index/` (planned) | 2, 4 |
-| Session brief | `SessionStart` context from prior work (→ ADR-012) | `src/wscontext/capture/` (planned) | 2 |
+| Stats | `ctx stats` views over records, logs and indexes, including stored volume, index, adoption and brief (→ ADR-018, ADR-019) | `src/wscontext/stats/` | 1+ |
+| History index | SQLite FTS5, vectors in stage 4; updated incrementally, and each query first indexes anything missing (→ ADR-013) | `src/wscontext/index/` | 2 (FTS5), 4 (vectors) |
+| Session brief | `SessionStart` context from prior work (→ ADR-012, ADR-035) | `src/wscontext/capture/brief.py` | 2 |
+| Eval | `ctx eval`, which scores search on the recorded corpus, and the script that records the corpus | `src/wscontext/cli/eval.py`, `eval/`, `acceptance/record_corpus.py` | 2 |
 | Code graph | tree-sitter nodes and edges, incremental by content hash (→ ADR-014) | `src/wscontext/graph/` (planned) | 3 |
 | Distiller | Async LLM extraction of decision records (→ ADR-015) | `src/wscontext/distill/` (planned) | 4 |
 | Plugin package | Marketplace and plugin manifests, `hooks/hooks.json`, `bin/ctx`, `bin/ctx.cmd`, stable launcher, skills (→ ADR-017) | repo root: `.claude-plugin/`, `hooks/`, `bin/`, `skills/` | 1 |
 
 ## Stages
 
-Stage 1 is built and passed its acceptance gate. Stages and their gates
+Stages 1 and 2 are built and passed their acceptance gates. Stages and their gates
 are in [roadmap.md](roadmap.md).
 
 | Stage | Delivers | Requirements | Status |
 |---|---|---|---|
 | 1 — Capture and trace | Plugin, capture, redaction, commit linking, history sync, `ctx why/sessions/show/forget`, `ctx stats` | [wscontext-phase-1.md](hist/wscontext-phase-1.md) | built |
-| 2 — History search | FTS5 index, `ctx find`, session brief, skill and CLAUDE.md block, adoption stats | [wscontext-phase-2.md](wscontext-phase-2.md) | not built |
+| 2 — History search | FTS5 index, `ctx find`, session brief, skill and CLAUDE.md block, adoption stats, idle-session finalization, stored-volume reduction, retention pruning, moving shared history out of the branches | [wscontext-phase-2.md](wscontext-phase-2.md) | built |
 | 3 — Code graph | Graph, `ctx code`, `ctx impact`, code stats | not written | not built |
 | 4 — Distillation and semantic search | Decision records with supersession, local embeddings, hybrid ranking | not written | not built |
 | 5 — Finalize | Release, Windows verification, purge and uninstall polish | not written | not built |
@@ -188,15 +243,27 @@ are in [roadmap.md](roadmap.md).
 - `.claude-plugin/plugin.json` has no author field; plugin validation warns.
 - Hooks keep firing in sessions that were already running when the plugin is
   uninstalled.
-- Nothing bounds the store's size. Raw transcripts are kept in full;
-  `retention.raw_days` is not enforced (pruning is stage 5); Claude Code's own
-  bookkeeping entries (system-prompt snapshots, API request records, skill and
-  tool listings) are a large share of a short session. With sync on,
-  `wscontext/history` is a branch under `refs/heads/`, so a plain clone of the
-  sync remote downloads all shared history (→ ADR-007).
-- A session that never sends `SessionEnd` (a closed VS Code conversation, a
-  terminal session that is gone) keeps the local transcript copy written at
-  each `Stop` but gets no final copy, no counts and no history-branch commit,
-  so it is never shared; it stays in new commits' trailers until
-  `capture.stale_session_minutes` pass (src/wscontext/capture/handlers.py:91,
-  src/wscontext/githooks/handlers.py:40). The fix is planned for stage 2.
+- Stored size is kept in check, but it has no upper limit. New captures drop
+  Claude Code's bookkeeping lines and duplicated fields (→ ADR-032). Sessions
+  captured in stage 1 keep their full copies. Tool results are kept whole
+  unless a repository sets `capture.tool_result_max_chars`. Size warnings only
+  warn; they enforce nothing (src/wscontext/config.py:54-57). Pruning removes
+  only local `raw/` files. The shared ref only grows, and removing anything
+  from it requires a history rewrite (→ ADR-007).
+- The shared ref is not a branch on the Git host, so the host's branch
+  protection does not apply to it.
+- Teammates still on stage 1 who push to a remote recreate
+  `refs/heads/wscontext/history` there. The next fetch merges it, and the next
+  push deletes it again (→ ADR-031).
+- An abandoned session is finalized only when wscontext next runs in the
+  repository after the staleness window (`capture.stale_session_minutes`) has
+  passed: at a session event, a commit or a read command. Nothing runs on a
+  timer (→ ADR-034).
+- If a prompt or tool call arrives while its session's final step runs, its
+  counts can be lost. The final step deletes the turn state when it ends
+  (src/wscontext/capture/worker.py:160).
+- Search matches words only, so paraphrases are missed. Tool names are indexed
+  together with their inputs, so a tool's name matches every session that
+  called it (src/wscontext/index/build.py:84).
+- Background fetches and pushes cannot ask for a credential. Without a
+  credential that works with no prompt, they fail, and `ctx doctor` warns.
