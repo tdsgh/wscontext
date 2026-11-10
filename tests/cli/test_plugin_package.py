@@ -60,7 +60,7 @@ def test_skill_text_covers_search_and_the_new_figures():
 
 
 def test_plugin_version_is_0_2_0():
-    assert json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"] == "0.2.0"
+    assert json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"] == "0.2.1"
 
 
 def test_git_hook_shims_are_in_the_package():
