@@ -76,12 +76,14 @@ def test_hook_path_imports_only_stdlib(tmp_path):
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "[]", out.stdout
     # `ctx hook` and `ctx git-hook` through the entry point, from a directory that is no repository.
-    for argv in (["hook", "Stop"], ["git-hook", "post-checkout"], ["worker", "copy"]):
+    for argv in (["hook", "Stop"], ["git-hook", "post-checkout"], ["worker", "copy"],
+                 ["git-hook", "post-merge"], ["hook", "SessionStart"]):
         run = ("import io, sys\nsys.stdin = io.StringIO('')\n"
                "before = set(sys.modules)\n"
                "from wscontext.cli.main import main\n"
                f"assert main({argv!r}) == 0\n"
                "new = set(sys.modules) - before\n"
+               "assert not [m for m in sys.modules if m.split('.')[:2] == ['wscontext', 'graph'] or m.split('.')[0] == 'tree_sitter']\n"
                "third = {m.split('.')[0] for m in new} - set(sys.stdlib_module_names) - {'wscontext'}\n"
                "# cli.output is the one cli module the hook path reuses (the brief's frame)\n"
                "cli = sorted(m for m in new if m.startswith('wscontext.cli.') and m not in {'wscontext.cli.main', 'wscontext.cli.output'})\n"

@@ -1,0 +1,297 @@
+{
+ "broken.py": {
+  "definitions": [
+   {
+    "name": "good",
+    "qualname": "good",
+    "kind": "function",
+    "start": 1,
+    "end": 2,
+    "signature": "def good()",
+    "parent": null
+   },
+   {
+    "name": "bad",
+    "qualname": "bad",
+    "kind": "function",
+    "start": 5,
+    "end": 6,
+    "signature": "def bad(",
+    "parent": null
+   },
+   {
+    "name": "after",
+    "qualname": "after",
+    "kind": "function",
+    "start": 9,
+    "end": 10,
+    "signature": "def after()",
+    "parent": null
+   }
+  ],
+  "imports": [],
+  "calls": [
+   {
+    "name": "good",
+    "line": 10,
+    "caller": "after"
+   }
+  ],
+  "error": "syntax error at line 5"
+ },
+ "imports.py": {
+  "definitions": [
+   {
+    "name": "lazy",
+    "qualname": "lazy",
+    "kind": "function",
+    "start": 11,
+    "end": 13,
+    "signature": "def lazy()",
+    "parent": null
+   }
+  ],
+  "imports": [
+   {
+    "spec": "os",
+    "names": [],
+    "line": 3
+   },
+   {
+    "spec": "os.path",
+    "names": [],
+    "line": 4
+   },
+   {
+    "spec": "json",
+    "names": [],
+    "line": 4
+   },
+   {
+    "spec": "pkg.core",
+    "names": [
+     "Engine",
+     "run"
+    ],
+    "line": 5
+   },
+   {
+    "spec": ".",
+    "names": [
+     "sibling"
+    ],
+    "line": 6
+   },
+   {
+    "spec": ".util",
+    "names": [
+     "tools"
+    ],
+    "line": 7
+   },
+   {
+    "spec": "..parent.mod",
+    "names": [
+     "*"
+    ],
+    "line": 8
+   },
+   {
+    "spec": "pkg.lazy",
+    "names": [],
+    "line": 12
+   }
+  ],
+  "calls": [
+   {
+    "name": "load",
+    "line": 13,
+    "caller": "lazy"
+   }
+  ],
+  "error": null
+ },
+ "shapes.py": {
+  "definitions": [
+   {
+    "name": "helper",
+    "qualname": "helper",
+    "kind": "function",
+    "start": 6,
+    "end": 7,
+    "signature": "def helper(x)",
+    "parent": null
+   },
+   {
+    "name": "cached",
+    "qualname": "cached",
+    "kind": "function",
+    "start": 10,
+    "end": 15,
+    "signature": "def cached(key, fallback=helper(0))",
+    "parent": null
+   },
+   {
+    "name": "inner",
+    "qualname": "cached.inner",
+    "kind": "function",
+    "start": 12,
+    "end": 13,
+    "signature": "def inner(y)",
+    "parent": "cached"
+   },
+   {
+    "name": "Shape",
+    "qualname": "Shape",
+    "kind": "class",
+    "start": 18,
+    "end": 36,
+    "signature": "class Shape(Base, metaclass=Meta)",
+    "parent": null
+   },
+   {
+    "name": "__init__",
+    "qualname": "Shape.__init__",
+    "kind": "method",
+    "start": 21,
+    "end": 22,
+    "signature": "def __init__(self, name)",
+    "parent": "Shape"
+   },
+   {
+    "name": "area",
+    "qualname": "Shape.area",
+    "kind": "method",
+    "start": 24,
+    "end": 26,
+    "signature": "def area(self)",
+    "parent": "Shape"
+   },
+   {
+    "name": "fetch",
+    "qualname": "Shape.fetch",
+    "kind": "method",
+    "start": 28,
+    "end": 32,
+    "signature": "async def fetch(self, url: str,) -> bytes",
+    "parent": "Shape"
+   },
+   {
+    "name": "Inner",
+    "qualname": "Shape.Inner",
+    "kind": "class",
+    "start": 34,
+    "end": 36,
+    "signature": "class Inner",
+    "parent": "Shape"
+   },
+   {
+    "name": "method",
+    "qualname": "Shape.Inner.method",
+    "kind": "method",
+    "start": 35,
+    "end": 36,
+    "signature": "def method(self)",
+    "parent": "Shape.Inner"
+   },
+   {
+    "name": "Square",
+    "qualname": "Square",
+    "kind": "class",
+    "start": 39,
+    "end": 42,
+    "signature": "class Square(Shape)",
+    "parent": null
+   },
+   {
+    "name": "area",
+    "qualname": "Square.area",
+    "kind": "method",
+    "start": 41,
+    "end": 42,
+    "signature": "def area(self)",
+    "parent": "Square"
+   }
+  ],
+  "imports": [
+   {
+    "spec": "functools",
+    "names": [],
+    "line": 3
+   }
+  ],
+  "calls": [
+   {
+    "name": "normalize",
+    "line": 7,
+    "caller": "helper"
+   },
+   {
+    "name": "helper",
+    "line": 11,
+    "caller": null
+   },
+   {
+    "name": "helper",
+    "line": 13,
+    "caller": "cached.inner"
+   },
+   {
+    "name": "inner",
+    "line": 15,
+    "caller": "cached"
+   },
+   {
+    "name": "make_registry",
+    "line": 19,
+    "caller": "Shape"
+   },
+   {
+    "name": "strip",
+    "line": 22,
+    "caller": "Shape.__init__"
+   },
+   {
+    "name": "value",
+    "line": 26,
+    "caller": "Shape.area"
+   },
+   {
+    "name": "compute",
+    "line": 26,
+    "caller": "Shape.area"
+   },
+   {
+    "name": "get",
+    "line": 32,
+    "caller": "Shape.fetch"
+   },
+   {
+    "name": "Shape",
+    "line": 36,
+    "caller": "Shape.Inner.method"
+   },
+   {
+    "name": "register",
+    "line": 39,
+    "caller": null
+   },
+   {
+    "name": "super",
+    "line": 42,
+    "caller": "Square.area"
+   },
+   {
+    "name": "main",
+    "line": 45,
+    "caller": null
+   },
+   {
+    "name": "helper",
+    "line": 45,
+    "caller": null
+   }
+  ],
+  "error": null
+ }
+}

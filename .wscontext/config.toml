@@ -27,3 +27,11 @@ brief = true
 [store]
 session_warn_bytes = 10485760
 store_warn_bytes = 1073741824
+
+[graph]
+languages = ["python", "typescript", "javascript"]
+exclude = []
+# the longest a command waits for the graph
+query_budget_ms = 5000
+# how many recent non-merge commits count toward co-change
+cochange_commits = 2000

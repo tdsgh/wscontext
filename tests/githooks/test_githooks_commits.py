@@ -345,3 +345,53 @@ def test_post_commit_spawns_a_sweep_when_one_is_due(repo, monkeypatch):
     (store.state / "last_sweep").write_text(f"{time.time()}\n")
     handlers.post_commit(store, config, [], "")
     assert len(spawned) == 1  # swept today and nothing idle
+
+
+def _graph_spawns(repo, monkeypatch, hook, args, graph=True):
+    spawned = []
+    monkeypatch.setattr(handlers, "spawn_worker",
+                        lambda a, cwd, module="": spawned.append((a, module)))
+    store = StorePaths.resolve(repo)
+    if graph:
+        store.index.mkdir(parents=True, exist_ok=True)
+        (store.index / "graph.db").write_bytes(b"")
+    handlers.HANDLERS[hook](store, load_config(repo), args, "")
+    return [s for s in spawned if s[1] == "wscontext.graph.worker"], store
+
+
+def test_branch_checkout_spawns_the_graph_worker(repo, monkeypatch):
+    spawned, store = _graph_spawns(repo, monkeypatch, "post-checkout", ["a", "b", "1"])
+    assert spawned == [(["refresh", str(store.root)], "wscontext.graph.worker")]
+
+
+def test_file_checkout_spawns_no_graph_worker(repo, monkeypatch):
+    assert _graph_spawns(repo, monkeypatch, "post-checkout", ["a", "b", "0"])[0] == []
+    assert _graph_spawns(repo, monkeypatch, "post-checkout", [])[0] == []
+
+
+def test_no_graph_file_spawns_no_graph_worker(repo, monkeypatch):
+    assert _graph_spawns(repo, monkeypatch, "post-checkout", ["a", "b", "1"], graph=False)[0] == []
+    assert _graph_spawns(repo, monkeypatch, "post-merge", ["0"], graph=False)[0] == []
+
+
+def test_merge_spawns_the_graph_worker_including_squash_and_fast_forward(repo, monkeypatch):
+    for args in (["0"], ["1"]):
+        assert len(_graph_spawns(repo, monkeypatch, "post-merge", args)[0]) == 1
+
+
+def test_real_branch_switch_and_merge_run_the_graph_worker(repo):
+    store = StorePaths.resolve(repo)
+    store.index.mkdir(parents=True, exist_ok=True)
+    (store.index / "graph.db").write_bytes(b"")
+    run_git(repo, "checkout", "-q", "-b", "feature")
+    wait_log(store, "worker:graph")
+    assert all(e["ok"] for e in log_lines(store, "git:post-checkout"))
+    _commit(repo, "g.txt", "x\n")
+    run_git(repo, "checkout", "-q", "main")
+    wait_log(store, "worker:graph", 2)
+    run_git(repo, "checkout", "-q", "main", "--", ".")  # file checkout
+    time.sleep(1)
+    assert len(log_lines(store, "worker:graph")) == 2
+    run_git(repo, "merge", "-q", "feature")
+    wait_log(store, "worker:graph", 3)
+    assert log_lines(store, "git:post-merge")[-1]["ok"]

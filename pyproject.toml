@@ -3,7 +3,12 @@ name = "wscontext"
 version = "0.2.1"
 description = "Local harness for Claude Code: session capture, commit links and search"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "tree-sitter",
+    "tree-sitter-python",
+    "tree-sitter-javascript",
+    "tree-sitter-typescript",
+]
 
 [project.scripts]
 ctx = "wscontext.cli.main:main"

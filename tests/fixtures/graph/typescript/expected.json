@@ -1,0 +1,449 @@
+{
+ "broken.ts": {
+  "definitions": [
+   {
+    "name": "good",
+    "qualname": "good",
+    "kind": "function",
+    "start": 1,
+    "end": 3,
+    "signature": "function good(): number",
+    "parent": null
+   },
+   {
+    "name": "bad",
+    "qualname": "bad",
+    "kind": "function",
+    "start": 5,
+    "end": 7,
+    "signature": "function bad(: number",
+    "parent": null
+   },
+   {
+    "name": "after",
+    "qualname": "after",
+    "kind": "function",
+    "start": 9,
+    "end": 11,
+    "signature": "function after(): number",
+    "parent": null
+   }
+  ],
+  "imports": [],
+  "calls": [
+   {
+    "name": "good",
+    "line": 10,
+    "caller": "after"
+   }
+  ],
+  "error": "syntax error at line 5"
+ },
+ "imports.ts": {
+  "definitions": [
+   {
+    "name": "lazy",
+    "qualname": "lazy",
+    "kind": "function",
+    "start": 15,
+    "end": 18,
+    "signature": "async function lazy()",
+    "parent": null
+   }
+  ],
+  "imports": [
+   {
+    "spec": "./default",
+    "names": [
+     "default"
+    ],
+    "line": 1
+   },
+   {
+    "spec": "./ns",
+    "names": [
+     "*"
+    ],
+    "line": 2
+   },
+   {
+    "spec": "./named",
+    "names": [
+     "a",
+     "b"
+    ],
+    "line": 3
+   },
+   {
+    "spec": "./types",
+    "names": [
+     "T"
+    ],
+    "line": 4
+   },
+   {
+    "spec": "fs",
+    "names": [],
+    "line": 5
+   },
+   {
+    "spec": "./side-effect",
+    "names": [],
+    "line": 6
+   },
+   {
+    "spec": "./all",
+    "names": [
+     "*"
+    ],
+    "line": 7
+   },
+   {
+    "spec": "./tools",
+    "names": [
+     "*"
+    ],
+    "line": 8
+   },
+   {
+    "spec": "./reexport",
+    "names": [
+     "x",
+     "y"
+    ],
+    "line": 9
+   },
+   {
+    "spec": "./cjs",
+    "names": [],
+    "line": 11
+   },
+   {
+    "spec": "./destructured",
+    "names": [],
+    "line": 12
+   },
+   {
+    "spec": "./lazy",
+    "names": [],
+    "line": 16
+   }
+  ],
+  "calls": [
+   {
+    "name": "require",
+    "line": 13,
+    "caller": null
+   }
+  ],
+  "error": null
+ },
+ "shapes.ts": {
+  "definitions": [
+   {
+    "name": "Drawable",
+    "qualname": "Drawable",
+    "kind": "type",
+    "start": 3,
+    "end": 5,
+    "signature": "interface Drawable<T> extends Base",
+    "parent": null
+   },
+   {
+    "name": "Point",
+    "qualname": "Point",
+    "kind": "type",
+    "start": 7,
+    "end": 7,
+    "signature": "type Point = { x: number; y: number }",
+    "parent": null
+   },
+   {
+    "name": "Color",
+    "qualname": "Color",
+    "kind": "type",
+    "start": 9,
+    "end": 12,
+    "signature": "enum Color",
+    "parent": null
+   },
+   {
+    "name": "helper",
+    "qualname": "helper",
+    "kind": "function",
+    "start": 14,
+    "end": 16,
+    "signature": "function helper(value: string = normalize(\"x\")): string",
+    "parent": null
+   },
+   {
+    "name": "area",
+    "qualname": "area",
+    "kind": "function",
+    "start": 18,
+    "end": 23,
+    "signature": "const area = async (w: number, h: number): Promise<number>",
+    "parent": null
+   },
+   {
+    "name": "inner",
+    "qualname": "area.inner",
+    "kind": "function",
+    "start": 19,
+    "end": 21,
+    "signature": "const inner = function ()",
+    "parent": "area"
+   },
+   {
+    "name": "short",
+    "qualname": "short",
+    "kind": "function",
+    "start": 25,
+    "end": 25,
+    "signature": "const short = (n: number)",
+    "parent": null
+   },
+   {
+    "name": "a",
+    "qualname": "a",
+    "kind": "function",
+    "start": 27,
+    "end": 27,
+    "signature": "const a = ()",
+    "parent": null
+   },
+   {
+    "name": "b",
+    "qualname": "b",
+    "kind": "function",
+    "start": 27,
+    "end": 27,
+    "signature": "const b = ()",
+    "parent": null
+   },
+   {
+    "name": "Shape",
+    "qualname": "Shape",
+    "kind": "class",
+    "start": 29,
+    "end": 56,
+    "signature": "abstract class Shape<T> extends Base implements Drawable<T>",
+    "parent": null
+   },
+   {
+    "name": "handler",
+    "qualname": "Shape.handler",
+    "kind": "method",
+    "start": 32,
+    "end": 32,
+    "signature": "handler = (e: Event)",
+    "parent": "Shape"
+   },
+   {
+    "name": "constructor",
+    "qualname": "Shape.constructor",
+    "kind": "method",
+    "start": 34,
+    "end": 37,
+    "signature": "constructor(private name: string)",
+    "parent": "Shape"
+   },
+   {
+    "name": "area",
+    "qualname": "Shape.area",
+    "kind": "method",
+    "start": 39,
+    "end": 43,
+    "signature": "area(): number",
+    "parent": "Shape"
+   },
+   {
+    "name": "label",
+    "qualname": "Shape.label",
+    "kind": "method",
+    "start": 47,
+    "end": 49,
+    "signature": "get label(): string",
+    "parent": "Shape"
+   },
+   {
+    "name": "#secret",
+    "qualname": "Shape.#secret",
+    "kind": "method",
+    "start": 51,
+    "end": 53,
+    "signature": "#secret()",
+    "parent": "Shape"
+   },
+   {
+    "name": "unit",
+    "qualname": "unit",
+    "kind": "function",
+    "start": 61,
+    "end": 63,
+    "signature": "function unit(): Shape<number>",
+    "parent": null
+   },
+   {
+    "name": "over",
+    "qualname": "over",
+    "kind": "function",
+    "start": 68,
+    "end": 70,
+    "signature": "function over(a: any): void",
+    "parent": null
+   }
+  ],
+  "imports": [
+   {
+    "spec": "./registry",
+    "names": [
+     "registry"
+    ],
+    "line": 1
+   }
+  ],
+  "calls": [
+   {
+    "name": "paint",
+    "line": 10,
+    "caller": "Color"
+   },
+   {
+    "name": "normalize",
+    "line": 14,
+    "caller": null
+   },
+   {
+    "name": "trim",
+    "line": 15,
+    "caller": "helper"
+   },
+   {
+    "name": "helper",
+    "line": 20,
+    "caller": "area.inner"
+   },
+   {
+    "name": "inner",
+    "line": 22,
+    "caller": "area"
+   },
+   {
+    "name": "double",
+    "line": 25,
+    "caller": "short"
+   },
+   {
+    "name": "a",
+    "line": 27,
+    "caller": "b"
+   },
+   {
+    "name": "make",
+    "line": 31,
+    "caller": "Shape"
+   },
+   {
+    "name": "onEvent",
+    "line": 32,
+    "caller": "Shape.handler"
+   },
+   {
+    "name": "add",
+    "line": 36,
+    "caller": "Shape.constructor"
+   },
+   {
+    "name": "memo",
+    "line": 39,
+    "caller": "Shape"
+   },
+   {
+    "name": "helper",
+    "line": 42,
+    "caller": "Shape.area"
+   },
+   {
+    "name": "toUpperCase",
+    "line": 48,
+    "caller": "Shape.label"
+   },
+   {
+    "name": "Point3D",
+    "line": 52,
+    "caller": "Shape.#secret"
+   },
+   {
+    "name": "Shape",
+    "line": 62,
+    "caller": "unit"
+   },
+   {
+    "name": "toString",
+    "line": 69,
+    "caller": "over"
+   },
+   {
+    "name": "register",
+    "line": 72,
+    "caller": null
+   }
+  ],
+  "error": null
+ },
+ "view.tsx": {
+  "definitions": [
+   {
+    "name": "View",
+    "qualname": "View",
+    "kind": "function",
+    "start": 3,
+    "end": 6,
+    "signature": "const View = ({ items }: Props)",
+    "parent": null
+   },
+   {
+    "name": "render",
+    "qualname": "render",
+    "kind": "function",
+    "start": 8,
+    "end": 10,
+    "signature": "function render(item: Item): JSX.Element",
+    "parent": null
+   }
+  ],
+  "imports": [
+   {
+    "spec": "./hooks",
+    "names": [
+     "useState"
+    ],
+    "line": 1
+   }
+  ],
+  "calls": [
+   {
+    "name": "useState",
+    "line": 4,
+    "caller": "View"
+   },
+   {
+    "name": "setOpen",
+    "line": 5,
+    "caller": "View"
+   },
+   {
+    "name": "map",
+    "line": 5,
+    "caller": "View"
+   },
+   {
+    "name": "format",
+    "line": 9,
+    "caller": "render"
+   }
+  ],
+  "error": null
+ }
+}

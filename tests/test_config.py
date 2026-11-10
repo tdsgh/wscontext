@@ -68,3 +68,20 @@ def test_retrieval_store_and_capture_overrides(tmp_path):
     assert cfg.retrieval.enabled is False and cfg.retrieval.brief is False
     assert cfg.store.session_warn_bytes == 5 and cfg.store.store_warn_bytes == 50
     assert cfg.capture.precompact_snapshot is True and cfg.capture.tool_result_max_chars == 8000
+
+
+def test_graph_defaults():
+    g = Config().graph
+    assert g.languages == ("python", "typescript", "javascript")
+    assert g.exclude == () and g.query_budget_ms == 5000 and g.cochange_commits == 2000
+
+
+def test_graph_overrides_and_unknown_language(tmp_path):
+    d = tmp_path / ".wscontext"
+    d.mkdir()
+    (d / "config.toml").write_text(
+        '[graph]\nlanguages = ["python", "cobol"]\nexclude = ["vendor/**"]\n'
+        'query_budget_ms = 100\ncochange_commits = 10\n')
+    g = load_config(tmp_path).graph
+    assert g.languages == ("python", "cobol") and g.exclude == ("vendor/**",)
+    assert g.query_budget_ms == 100 and g.cochange_commits == 10

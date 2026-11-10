@@ -62,7 +62,7 @@ def test_default_config_template_is_the_defaults():
     text = ctx_init.default_config_toml()
     parsed = tomllib.loads(text)
     assert set(parsed) == {"redaction", "retention", "sync", "hooks", "capture", "logs",
-                           "retrieval", "store"}
+                           "retrieval", "store", "graph"}
     assert "remote" not in parsed["sync"]
     # the committed file and the template agree with the dataclasses, and so with each other
     assert tomllib.loads((REPO_ROOT / ".wscontext" / "config.toml").read_text()) == parsed

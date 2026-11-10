@@ -1,0 +1,374 @@
+{
+ "broken.js": {
+  "definitions": [
+   {
+    "name": "good",
+    "qualname": "good",
+    "kind": "function",
+    "start": 1,
+    "end": 3,
+    "signature": "function good()",
+    "parent": null
+   }
+  ],
+  "imports": [],
+  "calls": [
+   {
+    "name": "good",
+    "line": 10,
+    "caller": null
+   }
+  ],
+  "error": "syntax error at line 6"
+ },
+ "imports.js": {
+  "definitions": [
+   {
+    "name": "lazy",
+    "qualname": "lazy",
+    "kind": "function",
+    "start": 13,
+    "end": 16,
+    "signature": "async function lazy()",
+    "parent": null
+   }
+  ],
+  "imports": [
+   {
+    "spec": "./default",
+    "names": [
+     "default"
+    ],
+    "line": 1
+   },
+   {
+    "spec": "./ns",
+    "names": [
+     "*"
+    ],
+    "line": 2
+   },
+   {
+    "spec": "./named",
+    "names": [
+     "a",
+     "b"
+    ],
+    "line": 3
+   },
+   {
+    "spec": "./side-effect",
+    "names": [],
+    "line": 4
+   },
+   {
+    "spec": "./all",
+    "names": [
+     "*"
+    ],
+    "line": 5
+   },
+   {
+    "spec": "./tools",
+    "names": [
+     "*"
+    ],
+    "line": 6
+   },
+   {
+    "spec": "./reexport",
+    "names": [
+     "x",
+     "y"
+    ],
+    "line": 7
+   },
+   {
+    "spec": "./cjs",
+    "names": [],
+    "line": 9
+   },
+   {
+    "spec": "./destructured",
+    "names": [],
+    "line": 10
+   },
+   {
+    "spec": "./lazy",
+    "names": [],
+    "line": 14
+   }
+  ],
+  "calls": [
+   {
+    "name": "require",
+    "line": 11,
+    "caller": null
+   }
+  ],
+  "error": null
+ },
+ "shapes.js": {
+  "definitions": [
+   {
+    "name": "helper",
+    "qualname": "helper",
+    "kind": "function",
+    "start": 1,
+    "end": 3,
+    "signature": "function helper(value = normalize(\"x\"))",
+    "parent": null
+   },
+   {
+    "name": "ids",
+    "qualname": "ids",
+    "kind": "function",
+    "start": 5,
+    "end": 7,
+    "signature": "function* ids()",
+    "parent": null
+   },
+   {
+    "name": "area",
+    "qualname": "area",
+    "kind": "function",
+    "start": 9,
+    "end": 14,
+    "signature": "const area = async (w, h)",
+    "parent": null
+   },
+   {
+    "name": "inner",
+    "qualname": "area.inner",
+    "kind": "function",
+    "start": 10,
+    "end": 12,
+    "signature": "const inner = function ()",
+    "parent": "area"
+   },
+   {
+    "name": "short",
+    "qualname": "short",
+    "kind": "function",
+    "start": 16,
+    "end": 16,
+    "signature": "const short = (n)",
+    "parent": null
+   },
+   {
+    "name": "a",
+    "qualname": "a",
+    "kind": "function",
+    "start": 18,
+    "end": 18,
+    "signature": "let a = ()",
+    "parent": null
+   },
+   {
+    "name": "b",
+    "qualname": "b",
+    "kind": "function",
+    "start": 18,
+    "end": 18,
+    "signature": "let b = ()",
+    "parent": null
+   },
+   {
+    "name": "Shape",
+    "qualname": "Shape",
+    "kind": "class",
+    "start": 20,
+    "end": 46,
+    "signature": "class Shape extends Base",
+    "parent": null
+   },
+   {
+    "name": "handler",
+    "qualname": "Shape.handler",
+    "kind": "method",
+    "start": 22,
+    "end": 22,
+    "signature": "handler = (e)",
+    "parent": "Shape"
+   },
+   {
+    "name": "constructor",
+    "qualname": "Shape.constructor",
+    "kind": "method",
+    "start": 24,
+    "end": 27,
+    "signature": "constructor(name)",
+    "parent": "Shape"
+   },
+   {
+    "name": "area",
+    "qualname": "Shape.area",
+    "kind": "method",
+    "start": 29,
+    "end": 31,
+    "signature": "area()",
+    "parent": "Shape"
+   },
+   {
+    "name": "label",
+    "qualname": "Shape.label",
+    "kind": "method",
+    "start": 33,
+    "end": 35,
+    "signature": "get label()",
+    "parent": "Shape"
+   },
+   {
+    "name": "create",
+    "qualname": "Shape.create",
+    "kind": "method",
+    "start": 37,
+    "end": 39,
+    "signature": "static create()",
+    "parent": "Shape"
+   },
+   {
+    "name": "#secret",
+    "qualname": "Shape.#secret",
+    "kind": "method",
+    "start": 41,
+    "end": 43,
+    "signature": "#secret()",
+    "parent": "Shape"
+   }
+  ],
+  "imports": [],
+  "calls": [
+   {
+    "name": "normalize",
+    "line": 1,
+    "caller": null
+   },
+   {
+    "name": "trim",
+    "line": 2,
+    "caller": "helper"
+   },
+   {
+    "name": "next",
+    "line": 6,
+    "caller": "ids"
+   },
+   {
+    "name": "helper",
+    "line": 11,
+    "caller": "area.inner"
+   },
+   {
+    "name": "inner",
+    "line": 13,
+    "caller": "area"
+   },
+   {
+    "name": "double",
+    "line": 16,
+    "caller": "short"
+   },
+   {
+    "name": "a",
+    "line": 18,
+    "caller": "b"
+   },
+   {
+    "name": "make",
+    "line": 21,
+    "caller": "Shape"
+   },
+   {
+    "name": "onEvent",
+    "line": 22,
+    "caller": "Shape.handler"
+   },
+   {
+    "name": "add",
+    "line": 26,
+    "caller": "Shape.constructor"
+   },
+   {
+    "name": "helper",
+    "line": 30,
+    "caller": "Shape.area"
+   },
+   {
+    "name": "toUpperCase",
+    "line": 34,
+    "caller": "Shape.label"
+   },
+   {
+    "name": "Shape",
+    "line": 38,
+    "caller": "Shape.create"
+   },
+   {
+    "name": "Point3D",
+    "line": 42,
+    "caller": "Shape.#secret"
+   },
+   {
+    "name": "register",
+    "line": 50,
+    "caller": null
+   }
+  ],
+  "error": null
+ },
+ "view.jsx": {
+  "definitions": [
+   {
+    "name": "View",
+    "qualname": "View",
+    "kind": "function",
+    "start": 3,
+    "end": 6,
+    "signature": "const View = ({ items })",
+    "parent": null
+   },
+   {
+    "name": "render",
+    "qualname": "render",
+    "kind": "function",
+    "start": 8,
+    "end": 10,
+    "signature": "function render(item)",
+    "parent": null
+   }
+  ],
+  "imports": [
+   {
+    "spec": "./hooks",
+    "names": [
+     "useState"
+    ],
+    "line": 1
+   }
+  ],
+  "calls": [
+   {
+    "name": "useState",
+    "line": 4,
+    "caller": "View"
+   },
+   {
+    "name": "setOpen",
+    "line": 5,
+    "caller": "View"
+   },
+   {
+    "name": "map",
+    "line": 5,
+    "caller": "View"
+   },
+   {
+    "name": "format",
+    "line": 9,
+    "caller": "render"
+   }
+  ],
+  "error": null
+ }
+}

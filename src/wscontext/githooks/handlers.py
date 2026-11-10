@@ -123,8 +123,19 @@ def pre_push(store: StorePaths, config: Config, args: list[str], stdin: str) -> 
         spawn(store, "push")
 
 
+def _graph_refresh(store: StorePaths) -> None:
+    """Start the graph worker, only where a graph already exists. Imports nothing from the graph."""
+    if not (store.index / "graph.db").exists():
+        return
+    try:
+        spawn_worker(["refresh", str(store.root)], store.root, module="wscontext.graph.worker")
+    except OSError:
+        pass  # the next graph command refreshes on its own
+
+
 def post_merge(store: StorePaths, config: Config, args: list[str], stdin: str) -> None:
-    """A merge commit made here is checkpointed like a `post-commit` one; the graph refresh lands in stage 3."""
+    """Refreshes the graph; a merge commit made here is also checkpointed like a `post-commit` one."""
+    _graph_refresh(store)
     # `--squash` (argument "1") commits later through `post-commit`.
     if args[:1] == ["1"]:
         return
@@ -139,8 +150,10 @@ def post_merge(store: StorePaths, config: Config, args: list[str], stdin: str) -
     post_commit(store, config, args, stdin)
 
 
-def _graph_refresh(store: StorePaths, config: Config, args: list[str], stdin: str) -> None:
-    """`post-checkout`: the code graph refresh lands in stage 3."""
+def post_checkout(store: StorePaths, config: Config, args: list[str], stdin: str) -> None:
+    """Arguments: old HEAD, new HEAD, and "1" for a branch checkout, "0" for a file checkout."""
+    if args[2:3] == ["1"]:
+        _graph_refresh(store)
 
 
 HANDLERS = {
@@ -149,6 +162,6 @@ HANDLERS = {
     "post-commit": post_commit,
     "post-rewrite": post_rewrite,
     "pre-push": pre_push,
-    "post-checkout": _graph_refresh,
+    "post-checkout": post_checkout,
     "post-merge": post_merge,
 }

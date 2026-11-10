@@ -58,6 +58,18 @@ class StoreConfig:
 
 
 @dataclass(frozen=True)
+class GraphConfig:
+    # an unknown language name is kept so the health check can report it
+    languages: tuple[str, ...] = ("python", "typescript", "javascript")
+    # glob patterns on repository paths
+    exclude: tuple[str, ...] = ()
+    # the longest a command waits for the graph
+    query_budget_ms: int = 5000
+    # how many recent non-merge commits count toward co-change
+    cochange_commits: int = 2000
+
+
+@dataclass(frozen=True)
 class Config:
     redaction: RedactionConfig = field(default_factory=RedactionConfig)
     retention: RetentionConfig = field(default_factory=RetentionConfig)
@@ -67,6 +79,7 @@ class Config:
     logs: LogsConfig = field(default_factory=LogsConfig)
     retrieval: RetrievalConfig = field(default_factory=RetrievalConfig)
     store: StoreConfig = field(default_factory=StoreConfig)
+    graph: GraphConfig = field(default_factory=GraphConfig)
 
 
 def _build(cls, data: dict, where: str):
@@ -91,7 +104,8 @@ def load_config(repo_root: Path) -> Config:
     sections = {"redaction": RedactionConfig, "retention": RetentionConfig,
                 "sync": SyncConfig, "hooks": HookConfig,
                 "capture": CaptureConfig, "logs": LogsConfig,
-                "retrieval": RetrievalConfig, "store": StoreConfig}
+                "retrieval": RetrievalConfig, "store": StoreConfig,
+                "graph": GraphConfig}
     kwargs = {}
     for key, value in data.items():
         if key in sections and isinstance(value, dict):
