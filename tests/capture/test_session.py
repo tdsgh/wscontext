@@ -107,6 +107,29 @@ def test_no_secret_in_a_branch_name_reaches_disk(hook, git_repo):
             ["git", "cat-file", "blob", sha], cwd=git_repo, capture_output=True).stdout, rel
 
 
+def test_no_account_identifier_reaches_a_stored_copy(hook, git_repo, transcript):
+    owner = {"type": "session-owner", "sessionId": "sess-cap1",
+             "accountUuid": "00000000-0000-4000-8000-0000000000a1",
+             "organizationUuid": "00000000-0000-4000-8000-0000000000b2"}
+    org = {"type": "attachment", "sessionId": "sess-cap1",
+           "attachment": {"type": "credential_org", "organizationUuid": owner["organizationUuid"]}}
+    for path in (transcript, transcript.parent / "sess-cap1" / "subagents" / "agent-abc123.jsonl"):
+        with path.open("a") as f:
+            f.write(json.dumps(owner) + "\n" + json.dumps({**org, "isSidechain": True}) + "\n")
+    for event, fixture in [("SessionStart", "session_start"), ("UserPromptSubmit", "user_prompt_submit"),
+                           ("Stop", "stop"), ("SessionEnd", "session_end")]:
+        assert hook(event, fixture)["ok"]
+    store = hook.store
+    assert (store.raw / "subagents" / "sess-cap1" / "abc123.jsonl").exists()
+    for path in store.local.rglob("*"):
+        if path.is_file():
+            data = path.read_bytes()
+            assert b"accountUuid" not in data and b"organizationUuid" not in data, path
+    for rel, (_, sha, _) in ls_blobs(store, read_tip(store)).items():
+        blob = subprocess.run(["git", "cat-file", "blob", sha], cwd=git_repo, capture_output=True).stdout
+        assert b"accountUuid" not in blob and b"organizationUuid" not in blob, rel
+
+
 # --- stage 2: reduced copies, idle finalization, local pruning ---
 
 import os

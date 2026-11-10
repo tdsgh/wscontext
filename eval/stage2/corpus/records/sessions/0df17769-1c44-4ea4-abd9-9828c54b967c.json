@@ -1,0 +1,67 @@
+{
+  "agent": "claude-code",
+  "author": "corpus@example.invalid",
+  "branch": "main",
+  "brief_tokens": 172,
+  "ctx_calls": {
+    "find": 1,
+    "why": 1
+  },
+  "ended_at": "2026-11-06T18:20:57+00:00",
+  "ended_by": "session-end",
+  "files_touched": [
+    "tally/__init__.py",
+    "tally/__main__.py",
+    "tally/cli.py",
+    "tally/money.py",
+    "tally/store.py"
+  ],
+  "head_end": "587ba759837824905f82b4faac4eac9e397f854e",
+  "head_start": "9ecb6dd82baf0d127ac268f30d457b7e20706daa",
+  "retrieval": true,
+  "schema_version": 2,
+  "session_id": "0df17769-1c44-4ea4-abd9-9828c54b967c",
+  "started_at": "2026-11-06T18:20:08+00:00",
+  "subagents": [],
+  "tokens": {
+    "cache_creation": 17336,
+    "cache_read": 162488,
+    "input": 14,
+    "output": 5289
+  },
+  "tool_calls": {
+    "ctx": 1,
+    "edit": 5,
+    "shell": 6
+  },
+  "transcript_bytes": {
+    "meta": 1821,
+    "prompt": 1176,
+    "reply": 23779,
+    "source": 300967,
+    "stored": 47458,
+    "subagent": 0,
+    "tool_result": 20682
+  },
+  "turns": [
+    {
+      "author": "corpus@example.invalid",
+      "ended_at": "2026-11-06T18:20:56.946Z",
+      "index": 0,
+      "schema_version": 1,
+      "session_id": "0df17769-1c44-4ea4-abd9-9828c54b967c",
+      "started_at": "2026-11-06T18:20:08.740Z",
+      "tokens": {
+        "cache_creation": 17336,
+        "cache_read": 162488,
+        "input": 14,
+        "output": 5289
+      },
+      "tool_calls": {
+        "edit": 5,
+        "shell": 8
+      }
+    }
+  ],
+  "worktree": "/private/var/folders/ks/sfrx9yn17pnbrrq2cb4rd7cm0000gp/T/wscontext-corpus-xitc2q1h/tally"
+}

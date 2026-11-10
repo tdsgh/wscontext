@@ -76,3 +76,53 @@ def test_active_flag_and_empty_query(store):
 def test_special_characters_do_not_break_the_query(store):
     build(store)
     assert {h.ref for h in run(store, 'rotate" NEAR(keys', kind="session")} >= {"s1"}
+
+
+def test_stopwords_are_dropped_unless_nothing_else_is_left(store):
+    add_session(store, "talk", [("how was it done, and what was the plan for it", "ok", "")])
+    add_session(store, "up", [("uploader retries", "done", "")])
+    add_session(store, "x", [("unrelated", "fine", "")])
+    add_session(store, "y", [("elsewhere", "fine", "")])
+    refresh(store)
+    # function words alone would rank "talk" first; only "uploader" is searched
+    assert [h.ref for h in run(store, "how was the uploader")] == ["up"]
+    assert [h.ref for h in run(store, "how was")] == ["talk"]
+
+
+def test_a_term_in_half_the_rows_does_not_narrow_and(store):
+    for sid, prompt in [("s1", "deploy alpha"), ("s2", "deploy beta"), ("s3", "deploy canary"),
+                        ("s4", "canary canary canary checklist"), ("s5", "misc"),
+                        ("s6", "misc too")]:
+        add_session(store, sid, [(prompt, "ok", "")])
+    refresh(store)
+    # "deploy" is in 3 of 6 rows, so bm25 gives it no weight: s4 is in the AND tier and ranks first
+    assert [h.ref for h in run(store, "deploy canary", limit=1)] == ["s4"]
+    assert [h.ref for h in run(store, "deploy", limit=1)] in (["s1"], ["s2"], ["s3"])
+
+
+def test_a_matching_commit_follows_the_session_it_came_from(store):
+    add_session(store, "s1", [("rework the uploader retry backoff with jitter", "done", "")])
+    add_session(store, "s2", [("uploader retry backoff notes", "uploader retry backoff", "")])
+    add_session(store, "s3", [("unrelated", "fine", "")])
+    add_session(store, "s4", [("elsewhere", "fine", "")])
+    sha = add_commit(store, "Tune jitter", ["s1"])
+    refresh(store)
+    query = "uploader retry backoff jitter"
+    # on bm25 alone the commit ranks after s2
+    commits = run(store, query, kind="commit")
+    assert [h.ref for h in commits] == [sha]
+    assert [h.ref for h in run(store, query, limit=3)] == ["s1", sha, "s2"]
+    assert [h.ref for h in run(store, query, kind="session")] == ["s1", "s2"]
+    # the commit is not listed twice, and a limit counts it
+    assert [h.ref for h in run(store, query, limit=2)] == ["s1", sha]
+
+
+def test_a_commit_matching_only_weightless_terms_keeps_its_own_rank(store):
+    for sid, prompt in [("s1", "uploader notes"), ("s2", "uploader retry notes"), ("s3", "notes"),
+                        ("s4", "notes misc"), ("s5", "misc")]:
+        add_session(store, sid, [(prompt, "ok", "")])
+    sha = add_commit(store, "Write notes", ["s1"])
+    refresh(store)
+    refs = [h.ref for h in run(store, "uploader notes")]
+    # "notes" is in 5 of 6 rows: the commit matches it but is not pulled up behind s1
+    assert set(refs[:2]) == {"s1", "s2"} and sha in refs[2:]

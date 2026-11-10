@@ -182,3 +182,12 @@ def test_short_results_and_zero_are_left_whole():
     data = result_line("x" * 500)
     assert reduce(data, 500) == reduce(data, 0)
     assert objects(reduce(data, 0))[1]["message"]["content"][0]["content"] == "x" * 500
+
+
+def test_no_reduced_copy_holds_account_identifiers():
+    data = (FIX / "kinds.jsonl").read_bytes() + \
+        line(type="attachment", isSidechain=True, sessionId="k1",
+             attachment={"type": "credential_org", "organizationUuid": "o"})
+    assert b"accountUuid" in data and b"organizationUuid" in data
+    out = reduce(data)
+    assert b"accountUuid" not in out and b"organizationUuid" not in out

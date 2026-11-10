@@ -1,0 +1,106 @@
+# The questions `ctx eval` asks of eval/stage2/corpus, with eval/stage2/repo.bundle for commit
+# messages. Each [[question]] has:
+#   text    the question, in a developer's words rather than the corpus's own phrasing
+#   expect  a full session id, or the first 12 characters of a commit SHA
+# The comment above each question names the tasks.toml task it is about and the answer type.
+# Questions asking "which commit" expect the commit; all others expect the session.
+
+# reject-pickle, session
+[[question]]
+text = "did we ever try storing the ledger with pickle, and why did we go back to json?"
+expect = "ce6a5816-558c-45c3-ae86-f49e400e7ddc"
+
+# reject-sqlite, session
+[[question]]
+text = "how much faster was sqlite than the json file at summing totals when we benchmarked it?"
+expect = "0ad7623d-bd08-434b-9b35-af3b1849d85f"
+
+# fix-float-cents, session
+[[question]]
+text = "is there a test that 19.99 doesn't end up a cent short because of float rounding?"
+expect = "1d8e00c7-f27c-4a85-9425-0d9bd14ffedd"
+
+# fix-empty-list, session
+[[question]]
+text = "what does tally list print when nobody has recorded any expenses yet?"
+expect = "d1d1d901-00d7-4d39-b37f-645e55fc1098"
+
+# fix-midnight, session
+[[question]]
+text = "where is the test that fakes the clock just before midnight so the date doesn't roll over?"
+expect = "00d12736-84b1-41c4-9afa-4ea3d3800144"
+
+# fix-negative-import, session
+[[question]]
+text = "why does importing a csv with a minus amount exit with 2 instead of 1?"
+expect = "9dfab461-953b-49ee-bd1d-8320ca66c1db"
+
+# package-split, session
+[[question]]
+text = "after tally was turned into a package, can you still run python3 tally.py directly?"
+expect = "0df17769-1c44-4ea4-abd9-9828c54b967c"
+
+# budget-warning (branch feature-budgets), session
+[[question]]
+text = "does the over-budget warning fire on every expense once you're past the limit, or only once?"
+expect = "af0a3e88-de3c-4369-88a3-7f1abe45796d"
+
+# recurring, session
+[[question]]
+text = "if I don't post the repeating rent expense for a few months, does it catch up on the missed ones?"
+expect = "56b22f7f-e3ad-4ae7-a031-de1a62fc1b94"
+
+# completion, session
+[[question]]
+text = "how was the shell tab completion tested, against a real bash?"
+expect = "eb590b90-ee7f-471c-9cb1-ec0ee12e95a7"
+
+# readme, session
+[[question]]
+text = "were the examples in the readme actually run, or written by hand from the code?"
+expect = "a06a77c1-c551-40ca-9142-e85daeeed6b3"
+
+# tags, session
+[[question]]
+text = "when filtering expenses by several labels, does an entry need all of them or just one?"
+expect = "7b4e399c-9340-4298-b286-d58c0bb0c92f"
+
+# fix-zero-budget, commit
+[[question]]
+text = "which commit stopped budget status from showing a percentage for a category with a 0 limit?"
+expect = "481f387ec3bd"
+
+# category-validation, commit
+[[question]]
+text = "which commit pulled the category name checks into one shared module?"
+expect = "815686f73ce4"
+
+# argparse, commit
+[[question]]
+text = "which commit moved the command line handling over to argparse?"
+expect = "f1268c435df8"
+
+# budget-set (branch feature-budgets), commit
+[[question]]
+text = "which commit on the budgets branch first added spending limits per category?"
+expect = "94e62c679870"
+
+# monthly-report (branch feature-report), commit
+[[question]]
+text = "which commit added the month by month spending breakdown with ascii bars?"
+expect = "d083c0bbb834"
+
+# undo, commit
+[[question]]
+text = "which commit lets you undo the last expense you entered?"
+expect = "9a30410b9cdf"
+
+# csv-import, commit
+[[question]]
+text = "which commit added loading expenses from a csv file while skipping ones already in the ledger?"
+expect = "3cf44ad9c8d8"
+
+# currency-symbol, commit
+[[question]]
+text = "which commit made the money sign configurable so amounts can print in euros?"
+expect = "78ccd840f642"

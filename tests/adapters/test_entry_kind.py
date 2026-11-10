@@ -10,8 +10,8 @@ EXPECTED = [
     "prompt", "reply", "tool_result", "meta", "meta",
     "meta", "meta", "meta", "meta",
     "compaction", "compaction", "title", "title", "subagent",
-    *["bookkeeping"] * 9,
-    *["bookkeeping"] * 19,
+    *["bookkeeping"] * 11,
+    *["bookkeeping"] * 21,
     "unknown", "unknown", "unknown",
 ]
 
@@ -45,7 +45,7 @@ def test_measure_totals_match_the_file_and_hold_no_values():
     kinds = {k for k in sizes if " " not in k and "." not in k}
     assert sum(sizes[k] for k in kinds) == FIXTURE.stat().st_size
     assert sum(sizes[f"{k} lines"] for k in kinds) == len(FIXTURE.read_bytes().splitlines())
-    assert sizes["bookkeeping lines"] == 28 and sizes["unknown lines"] == 4
+    assert sizes["bookkeeping lines"] == 32 and sizes["unknown lines"] == 4
     assert not any(k.startswith("bookkeeping.") for k in sizes)
     assert sizes["reply.wireToolInputs"] == len('"wireToolInputs":{"t1":{"file_path":"fetch.py"}}')
     # keys are kind and field names only; no value from the transcript leaks into them

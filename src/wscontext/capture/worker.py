@@ -59,7 +59,7 @@ def _raw_name(store: StorePaths, session_id: str, record: SessionRecord | None,
     return directory / f"{date}-{session_id}.jsonl"
 
 
-def _copy_reduced(source: Path, target: Path, config: Config) -> int:
+def copy_reduced(source: Path, target: Path, config: Config) -> int:
     """Store a transcript: reduce it to the stored shape, redact, write. Returns the hit count."""
     data = source.read_bytes()
     cut = config.capture.tool_result_max_chars
@@ -70,6 +70,15 @@ def _copy_reduced(source: Path, target: Path, config: Config) -> int:
     data, more = redact_bytes(reduce(data, cut), config)
     atomic_write(target, data)
     return len(hits) + len(more)
+
+
+def stored_sizes(raw: Path, subagents: Path) -> dict[str, int]:
+    """A session's stored bytes per kind and `stored` in all. Its subagent copies in
+    `subagents` count as `subagent`, like sidechain lines."""
+    sizes = {k: v for k, v in measure(raw).items() if " " not in k and "." not in k}
+    sizes["subagent"] = sizes.get("subagent", 0) + sum(
+        p.stat().st_size for p in subagents.glob("*.jsonl"))
+    return {**sizes, "stored": sum(sizes.values())}
 
 
 def _session_lock(store: StorePaths, session_id: str) -> FileLock:
@@ -111,7 +120,7 @@ def _final(store: StorePaths, config: Config, session_id: str, source: Path | No
         for ref in parsed.subagents:
             if is_safe_name(ref.agent_id) and ref.path is not None:
                 target = store.raw / "subagents" / session_id / f"{ref.agent_id}.jsonl"
-                _copy_reduced(ref.path, target, config)
+                copy_reduced(ref.path, target, config)
                 copied.append(target)
                 if source_bytes is not None:
                     source_bytes += ref.path.stat().st_size
@@ -141,12 +150,7 @@ def _final(store: StorePaths, config: Config, session_id: str, source: Path | No
         record.brief_tokens = (record.brief_tokens or 0) + state["brief_tokens"]
     record.head_end = git_value(store, "rev-parse", "HEAD")
     if raw.is_file():
-        # stored bytes per kind; subagent copies count as `subagent`, like sidechain lines
-        sizes = {k: v for k, v in measure(raw).items() if " " not in k and "." not in k}
-        subagents = store.raw / "subagents" / session_id
-        sizes["subagent"] = sizes.get("subagent", 0) + sum(
-            p.stat().st_size for p in subagents.glob("*.jsonl"))
-        record.transcript_bytes = {**sizes, "stored": sum(sizes.values())}
+        record.transcript_bytes = stored_sizes(raw, store.raw / "subagents" / session_id)
         if source_bytes is not None:
             record.transcript_bytes["source"] = source_bytes
     write_session(store, record, config)
@@ -194,7 +198,7 @@ def _finalize_idle(store: StorePaths, config: Config) -> tuple[list[str], list[s
             with _session_lock(store, sid):
                 raw = _raw_name(store, sid, _read_record(store, sid), False)
                 if source:
-                    _copy_reduced(source, raw, config)
+                    copy_reduced(source, raw, config)
                 _final(target, config, sid, source, raw, "idle", ended_at)
             done.append(sid)
         except Exception as e:
@@ -315,7 +319,7 @@ def run(action: str, session_id: str, transcript: str, cwd: str) -> None:
                 raw = _raw_name(store, session_id, _read_record(store, session_id),
                                 action == "snapshot")
                 if action != "final" or source.is_file():
-                    entry["redactions"] = _copy_reduced(source, raw, config)
+                    entry["redactions"] = copy_reduced(source, raw, config)
                 if action == "final":
                     # the final step runs from the raw copy when the transcript is gone
                     _final(store, config, session_id, source if source.is_file() else None,

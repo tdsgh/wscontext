@@ -21,6 +21,8 @@
 {"type":"file-history-snapshot","messageId":"p1","snapshot":{}}
 {"type":"file-history-delta","messageId":"p1","backup":{}}
 {"type":"tools-used","sessionId":"k1","tools":["Read"]}
+{"type":"session-owner","sessionId":"k1","accountUuid":"00000000-0000-4000-8000-0000000000a1","organizationUuid":"00000000-0000-4000-8000-0000000000b2"}
+{"type":"cost-state","sessionId":"k1","totalCostUSD":0.01,"modelUsage":{"some-model":{"inputTokens":3}}}
 {"type":"attachment","sessionId":"k1","attachment":{"type":"prompt_snapshot"}}
 {"type":"attachment","sessionId":"k1","attachment":{"type":"skill_listing"}}
 {"type":"attachment","sessionId":"k1","attachment":{"type":"deferred_tools_record"}}
@@ -40,6 +42,8 @@
 {"type":"attachment","sessionId":"k1","attachment":{"type":"remote_session_change"}}
 {"type":"attachment","sessionId":"k1","attachment":{"type":"silent_turn_reminder"}}
 {"type":"attachment","sessionId":"k1","attachment":{"type":"thinking_drop"}}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"budget_usd","used":0.01,"total":1,"remaining":0.99},"rendered":[{"content":"USD budget"}],"renderedRole":"system"}
+{"type":"attachment","sessionId":"k1","attachment":{"type":"hook_success","hookName":"SessionStart:startup","hookEvent":"SessionStart","toolUseID":"SessionStart","stdout":"{\"hookSpecificOutput\":{\"additionalContext\":\"a brief\"}}","stderr":"","exitCode":0,"command":"hook","durationMs":5,"content":""}}
 {"type":"brand-new-entry","sessionId":"k1","payload":{"x":1}}
 {"type":"attachment","sessionId":"k1","attachment":{"type":"brand_new_attachment"}}
 {"sessionId":"k1","note":"no type at all"}

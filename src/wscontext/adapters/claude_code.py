@@ -17,15 +17,17 @@ TOKEN_KEYS = {"input_tokens": "input", "output_tokens": "output",
               "cache_creation_input_tokens": "cache_creation"}
 
 # Line types and attachment types that hold Claude Code's internal state, not the
-# conversation: API request records, queue and file-history entries, listings and snapshots.
+# conversation: API request records, queue and file-history entries, listings and snapshots,
+# account and cost state, and per-hook run records.
 BOOKKEEPING_PREFIXES = ("api-request", "file-history-")
-BOOKKEEPING_TYPES = frozenset({"queue-operation", "last-prompt", "atis-latch", "tools-used"})
+BOOKKEEPING_TYPES = frozenset({"queue-operation", "last-prompt", "atis-latch", "tools-used",
+                               "session-owner", "cost-state"})
 BOOKKEEPING_ATTACHMENTS = frozenset({
     "prompt_snapshot", "skill_listing", "deferred_tools_record", "deferred_tools_delta",
     "agent_listing_delta", "mcp_instructions_delta", "instructions", "nested_memory",
     "invoked_skills", "session_context", "environment", "model", "date", "auto_mode",
     "credential_org", "command_permissions", "remote_session_change", "silent_turn_reminder",
-    "thinking_drop"})
+    "thinking_drop", "budget_usd", "hook_success"})
 META_ATTACHMENTS = frozenset({"queued_command", "file", "edited_text_file",
                               "hook_additional_context"})
 TITLE_TYPES = frozenset({"ai-title", "summary"})

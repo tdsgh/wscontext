@@ -3,6 +3,7 @@ import shutil
 from pathlib import Path
 
 from cli_support import FIXTURES, checkpoint, run_json, spawned, world  # noqa: F401
+from conftest import run_git
 
 from wscontext.index.db import db_path
 
@@ -73,3 +74,44 @@ def test_eval_exits_1_below_min_and_reports_a_missed_answer(world, capsys, tmp_p
 def test_eval_without_a_corpus_is_an_error(world, capsys):
     code, _, err = world.ctx(capsys, "eval")
     assert code == 1 and "no corpus" in err
+
+
+def _corpus_with_bundle(world, tmp_path, bundle: bool) -> tuple[Path, Path]:
+    """The world's session and c1's checkpoint as a corpus; c1 lives only in the bundle."""
+    checkpoint(world.store, world.c1, ["sess-one"])
+    base = tmp_path / ("with-bundle" if bundle else "no-bundle")
+    for name in ("raw", "records"):
+        shutil.copytree(world.store.local / name, base / "corpus" / name)
+    if bundle:
+        run_git(world.repo, "bundle", "create", str(base / "repo.bundle"), "--branches")
+    questions = base / "q.toml"
+    questions.write_text(f'[[question]]\ntext = "add app"\nexpect = "{world.c1[:12]}"\n')
+    return base / "corpus", questions
+
+
+def test_eval_clones_the_bundle_beside_the_corpus_so_commits_are_scored(world, capsys, tmp_path):
+    corpus, questions = _corpus_with_bundle(world, tmp_path, bundle=True)
+    data = run_json(world, capsys, "eval", "--corpus", str(corpus), "--questions", str(questions))
+    summary, question = data["results"]
+    assert summary["commits_indexed"] == 1 and summary["bundle"] == str(corpus.parent / "repo.bundle")
+    assert question["rank"] is not None
+    code, out, _ = world.ctx(capsys, "eval", "--corpus", str(corpus), "--questions", str(questions))
+    assert code == 0 and "commits indexed from repo.bundle: 1" in out
+    assert not (world.repo / "wscontext").exists()
+
+
+def test_eval_without_a_bundle_cannot_find_a_commit(world, capsys, tmp_path):
+    corpus, questions = _corpus_with_bundle(world, tmp_path, bundle=False)
+    data = run_json(world, capsys, "eval", "--corpus", str(corpus), "--questions", str(questions))
+    summary, question = data["results"]
+    assert summary["commits_indexed"] == 0 and summary["bundle"] is None
+    assert question["rank"] is None
+    _, out, _ = world.ctx(capsys, "eval", "--corpus", str(corpus), "--questions", str(questions))
+    assert "repo.bundle" not in out
+
+
+def test_eval_with_an_unreadable_bundle_is_an_error(world, capsys, tmp_path):
+    corpus, questions = _corpus_with_bundle(world, tmp_path, bundle=False)
+    (corpus.parent / "repo.bundle").write_text("not a bundle\n")
+    code, _, err = world.ctx(capsys, "eval", "--corpus", str(corpus), "--questions", str(questions))
+    assert code == 1 and "cannot clone" in err

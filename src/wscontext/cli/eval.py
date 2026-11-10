@@ -1,6 +1,8 @@
 """`ctx eval`: score search against a fixed corpus and question set.
 
-The corpus is indexed into a temporary store; the repository's own store is never touched.
+The corpus is indexed into a temporary store; the repository's own store is never touched. A
+`repo.bundle` beside the corpus is cloned into that store first, so linked commit messages are
+indexed and questions whose answer is a commit can be scored.
 """
 
 import json
@@ -11,6 +13,7 @@ from pathlib import Path
 
 from wscontext.cli.output import Block, Reply, error, render
 from wscontext.config import Config
+from wscontext.gitutil import GitError, git
 from wscontext.index import build
 from wscontext.index.db import connect
 from wscontext.index.search import search
@@ -19,10 +22,12 @@ from wscontext.store.paths import StorePaths
 RANK_DEPTH = 20
 TOP = 3
 DEFAULT_DIR = Path("eval") / "stage2"
+BUNDLE = "repo.bundle"
 
 
 def add_arguments(parser) -> None:
-    parser.add_argument("--corpus", help="directory holding raw/ and records/ "
+    parser.add_argument("--corpus", help="directory holding raw/ and records/, with an optional "
+                                         f"{BUNDLE} beside it for commit messages "
                                          f"(default: {(DEFAULT_DIR / 'corpus').as_posix()})")
     parser.add_argument("--questions", help="TOML file of [[question]] tables with `text` and "
                                             f"`expect` (default: {(DEFAULT_DIR / 'questions.toml').as_posix()})")
@@ -63,12 +68,18 @@ def run(args, store: StorePaths, config: Config) -> Reply:
     if not pairs:
         return error(f"{questions_file} holds no questions", args.json)
 
+    bundle = corpus.parent / BUNDLE
     with tempfile.TemporaryDirectory(prefix="wscontext-eval-") as tmp:
         temp = _temp_store(Path(tmp))
+        if bundle.is_file():
+            try:
+                git("clone", "--quiet", "--no-checkout", str(bundle.resolve()), ".", cwd=temp.root)
+            except GitError as e:
+                return error(f"cannot clone {bundle}: {e}", args.json)
         for name in ("raw", "records"):
             if (corpus / name).is_dir():
                 shutil.copytree(corpus / name, temp.local / name)
-        build.refresh(temp)
+        counts = build.refresh(temp)
         conn = connect(temp, readonly=True)
         try:
             ranks = []
@@ -83,11 +94,16 @@ def run(args, store: StorePaths, config: Config) -> Reply:
 
     top = sum(1 for r in ranks if r is not None and r <= TOP)
     share = round(100 * stored / source, 1) if source else None
+    body = [f"stored-to-source share: {share}%" if share is not None
+            else "stored-to-source share: not recorded in this corpus"]
+    if bundle.is_file():
+        body.append(f"commits indexed from {BUNDLE}: {counts['commits_indexed']}")
     summary = Block("eval", "summary", f"{top} of {len(pairs)} expected answers in the top {TOP}",
-                    body=[f"stored-to-source share: {share}%" if share is not None
-                          else "stored-to-source share: not recorded in this corpus"],
+                    body=body,
                     extra={"top3": top, "questions": len(pairs), "min": args.minimum,
-                           "stored_bytes": stored, "source_bytes": source, "share_percent": share})
+                           "stored_bytes": stored, "source_bytes": source, "share_percent": share,
+                           "commits_indexed": counts["commits_indexed"],
+                           "bundle": str(bundle) if bundle.is_file() else None})
     blocks = [summary]
     for n, ((text, expect), rank) in enumerate(zip(pairs, ranks), 1):
         blocks.append(Block("question", f"q{n}", text,

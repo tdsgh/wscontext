@@ -1,0 +1,13 @@
+{
+  "author": "corpus@example.invalid",
+  "created_at": "2026-11-06T18:25:16+00:00",
+  "deletions": 11,
+  "files_changed": 2,
+  "insertions": 141,
+  "rewritten_from": null,
+  "schema_version": 1,
+  "session_ids": [
+    "00d12736-84b1-41c4-9afa-4ea3d3800144"
+  ],
+  "sha": "f8656e67727ca5bccd1f2f056aca1ae370a0f776"
+}

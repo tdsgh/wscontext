@@ -1,0 +1,66 @@
+{
+  "agent": "claude-code",
+  "author": "corpus@example.invalid",
+  "branch": "feature-budgets",
+  "brief_tokens": null,
+  "ctx_calls": {
+    "find": 1
+  },
+  "ended_at": "2026-11-06T18:19:34+00:00",
+  "ended_by": "session-end",
+  "files_touched": [
+    ".gitignore",
+    "tally.py",
+    "tests/test_budget.py"
+  ],
+  "head_end": "94e62c679870166c9247127157f912c339697f22",
+  "head_start": "15af88c2c830d53c53144c6ae88f8a091724a7ea",
+  "retrieval": true,
+  "schema_version": 2,
+  "session_id": "50007f9e-4779-47a3-bf92-d37e58d930a6",
+  "started_at": "2026-11-06T18:18:40+00:00",
+  "subagents": [],
+  "tokens": {
+    "cache_creation": 15410,
+    "cache_read": 202764,
+    "input": 18,
+    "output": 5382
+  },
+  "tool_calls": {
+    "ctx": 1,
+    "edit": 5,
+    "read": 2,
+    "shell": 4
+  },
+  "transcript_bytes": {
+    "meta": 567,
+    "prompt": 1297,
+    "reply": 23977,
+    "source": 298908,
+    "stored": 41316,
+    "subagent": 0,
+    "tool_result": 15475
+  },
+  "turns": [
+    {
+      "author": "corpus@example.invalid",
+      "ended_at": "2026-11-06T18:19:34.474Z",
+      "index": 0,
+      "schema_version": 1,
+      "session_id": "50007f9e-4779-47a3-bf92-d37e58d930a6",
+      "started_at": "2026-11-06T18:18:40.700Z",
+      "tokens": {
+        "cache_creation": 15410,
+        "cache_read": 202764,
+        "input": 18,
+        "output": 5382
+      },
+      "tool_calls": {
+        "edit": 5,
+        "read": 2,
+        "shell": 6
+      }
+    }
+  ],
+  "worktree": "/private/var/folders/ks/sfrx9yn17pnbrrq2cb4rd7cm0000gp/T/wscontext-corpus-xitc2q1h/tally"
+}

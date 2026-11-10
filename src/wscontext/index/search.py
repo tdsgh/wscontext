@@ -7,6 +7,17 @@ from dataclasses import dataclass
 # weights per FTS column, in table order; unindexed columns weigh 0
 _WEIGHTS = "0, 0, 0, 0, 4.0, 2.0, 1.0, 3.0"
 _FETCH_FACTOR = 50
+# NLTK's English stopword list; `\w+` splits "doesn't" into "doesn" and "t", so both halves are here
+_STOPWORDS = frozenset("""
+a about above after again against ain all am an and any are aren as at be because been before
+being below between both but by can couldn d did didn do does doesn doing don down during each
+few for from further had hadn has hasn have haven having he her here hers herself him himself
+his how i if in into is isn it its itself just ll m ma me mightn more most mustn my myself
+needn no nor not now o of off on once only or other our ours ourselves out over own re s same
+shan she should shouldn so some such t than that the their theirs them themselves then there
+these they this those through to too under until up ve very was wasn we were weren what when
+where which while who whom why will with won wouldn y you your yours yourself yourselves
+""".split())
 
 
 @dataclass
@@ -31,24 +42,50 @@ def _match(tokens: list[str], op: str) -> str:
 def search(conn: sqlite3.Connection, text: str, *, branch: str | None = None,
            author: str | None = None, since: str | None = None, file: str | None = None,
            kind: str | None = None, limit: int = 10) -> list[Hit]:
-    """Quoted terms joined by AND; OR when AND finds fewer than `limit`. One hit per session
-    (its best exchange) and per commit. `since` is an ISO date or timestamp; `file` matches as a
-    substring of a touched path."""
+    """Quoted terms joined by AND; OR when AND finds fewer than `limit`. Stopwords are dropped,
+    and AND leaves out terms that bm25 gives no weight, unless that leaves nothing. One hit per
+    session (its best exchange) and per commit; a matching commit linked to a session hit follows
+    it. `since` is an ISO date or timestamp; `file` matches as a substring of a touched path."""
     tokens = re.findall(r"\w+", text)
+    tokens = [t for t in tokens if t.lower() not in _STOPWORDS] or tokens
     if not tokens or limit < 1:
         return []
-    hits = _run(conn, _match(tokens, "AND"), branch, author, since, file, kind, limit)
+    # bm25 weighs a term found in half the rows or more as zero
+    rows = conn.execute("SELECT count(*) FROM docs_fts").fetchone()[0]
+    weighted = [t for t in tokens if 2 * conn.execute(
+        "SELECT count(*) FROM docs_fts WHERE docs_fts MATCH ?", (_match([t], "OR"),)).fetchone()[0]
+        < rows] or tokens
+    hits = _run(conn, _match(weighted, "AND"), branch, author, since, file, kind, limit)
     if len(hits) < limit and len(tokens) > 1:
         seen = {(h.kind, h.ref) for h in hits}
         more = _run(conn, _match(tokens, "OR"), branch, author, since, file, kind, limit)
         # AND matches rank first; OR adds the rest
         hits += [h for h in more if (h.kind, h.ref) not in seen][: limit - len(hits)]
-    return hits
+    if kind == "session":
+        return hits
+    # a commit matching a weighted term ranks no lower than right after its best-ranked session
+    sessions = [h.ref for h in hits if h.kind == "session"]
+    linked = {sid: [c for c in shas.split("\n") if c] for sid, shas in conn.execute(
+        f"SELECT session_id, commits FROM sessions WHERE session_id IN "
+        f"({','.join('?' * len(sessions))})", sessions)}
+    wanted = [c for shas in linked.values() for c in shas]
+    found = {h.ref: h for h in _run(conn, _match(weighted, "OR"), branch, author, since, file,
+                                    "commit", len(wanted), refs=wanted)} if wanted else {}
+    out: dict[tuple[str, str], Hit] = {}
+    for h in hits:
+        out.setdefault((h.kind, h.ref), h)
+        for c in sorted((found[c] for c in linked.get(h.ref, ()) if c in found),
+                        key=lambda c: c.score):
+            out.setdefault(("commit", c.ref), c)
+    return list(out.values())[:limit]
 
 
-def _run(conn, match, branch, author, since, file, kind, limit) -> list[Hit]:
+def _run(conn, match, branch, author, since, file, kind, limit, refs=None) -> list[Hit]:
     where = ["docs_fts MATCH ?"]
     params: list = [match]
+    if refs is not None:
+        where.append(f"d.ref IN ({','.join('?' * len(refs))})")
+        params.extend(refs)
     if kind:
         where.append("d.kind = ?")
         params.append(kind)

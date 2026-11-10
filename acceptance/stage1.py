@@ -130,6 +130,7 @@ class Acc:
     model: str | None
     budget: float
     env: dict[str, str]
+    extra: tuple[str, ...] = ()  # opt-in claude flags appended to every headless call
 
     @property
     def commit(self) -> str:
@@ -212,7 +213,7 @@ class Acc:
                "--permission-mode", "dontAsk", "--allowedTools", f"{tools} Bash({self.commit} *)",
                "--max-budget-usd", str(self.budget),
                "--resume" if resume else "--session-id", session]
-        return cmd + (["--model", self.model] if self.model else [])
+        return cmd + (["--model", self.model] if self.model else []) + list(self.extra)
 
     def claude_start(self, repo: Path, prompt: str, session: str | None = None, resume: bool = False,
                      tools: str = TOOLS) -> tuple[str, subprocess.Popen, str]:

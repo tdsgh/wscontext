@@ -1,0 +1,64 @@
+{
+  "agent": "claude-code",
+  "author": "corpus@example.invalid",
+  "branch": "main",
+  "brief_tokens": 173,
+  "ctx_calls": {
+    "find": 1,
+    "why": 1
+  },
+  "ended_at": "2026-11-06T18:32:25+00:00",
+  "ended_by": "session-end",
+  "files_touched": [
+    "tally/cli.py",
+    "tests/test_import.py"
+  ],
+  "head_end": "562eada9e813f7ba3473ab6d910aa5af1de42772",
+  "head_start": "3cf44ad9c8d8b6e5032ca4c14e2920eeec0b09bc",
+  "retrieval": true,
+  "schema_version": 2,
+  "session_id": "9dfab461-953b-49ee-bd1d-8320ca66c1db",
+  "started_at": "2026-11-06T18:31:56+00:00",
+  "subagents": [],
+  "tokens": {
+    "cache_creation": 21598,
+    "cache_read": 159561,
+    "input": 12,
+    "output": 2478
+  },
+  "tool_calls": {
+    "ctx": 2,
+    "edit": 5,
+    "shell": 3
+  },
+  "transcript_bytes": {
+    "meta": 1823,
+    "prompt": 1116,
+    "reply": 14579,
+    "source": 309196,
+    "stored": 56241,
+    "subagent": 0,
+    "tool_result": 38723
+  },
+  "turns": [
+    {
+      "author": "corpus@example.invalid",
+      "ended_at": "2026-11-06T18:32:24.555Z",
+      "index": 0,
+      "schema_version": 1,
+      "session_id": "9dfab461-953b-49ee-bd1d-8320ca66c1db",
+      "started_at": "2026-11-06T18:31:56.518Z",
+      "tokens": {
+        "cache_creation": 21598,
+        "cache_read": 159561,
+        "input": 12,
+        "output": 2478
+      },
+      "tool_calls": {
+        "edit": 5,
+        "shell": 5
+      }
+    }
+  ],
+  "worktree": "/private/var/folders/ks/sfrx9yn17pnbrrq2cb4rd7cm0000gp/T/wscontext-corpus-xitc2q1h/tally"
+}

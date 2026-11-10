@@ -35,8 +35,8 @@ message = "Record why pickle storage was rejected"
 [[task]]
 id = "fix-float-cents"
 kind = "bugfix"
-prompt = "Bug: adding 19.99 stores 1998 cents because the amount is converted with int(float * 100) and truncates. Fix it by parsing the amount with the decimal module, and add tests/test_amount.py that covers 19.99, 0.10 and 5."
-message = "Fix cents truncation by parsing amounts with decimal"
+prompt = "Make sure amounts are parsed exactly: adding 19.99 must store 1999 cents, never 1998 as int(float * 100) would. Parse the amount with the decimal module; if the code already does, keep it. Add tests/test_amount.py that covers 19.99, 0.10 and 5."
+message = "Parse amounts with decimal and test exact cents"
 
 [[task]]
 id = "budget-set"
@@ -68,8 +68,8 @@ message = "Add CSV export"
 [[task]]
 id = "fix-empty-list"
 kind = "bugfix"
-prompt = "Bug: `list` crashes with an IndexError when the ledger is empty, because the column width is computed from the first row. Make it print 'No entries.' instead and add a test."
-message = "Fix list crash on an empty ledger"
+prompt = "Make sure `list` handles an empty ledger: with no entries it prints 'No entries.' and exits 0, and never computes column widths from a first row that does not exist. Change the code if it does not do this yet, and add a test for the empty case."
+message = "Handle an empty ledger in the list command"
 
 [[task]]
 id = "recurring"
@@ -92,8 +92,8 @@ message = "Add tags to entries"
 [[task]]
 id = "fix-midnight"
 kind = "bugfix"
-prompt = "Bug: entries added shortly before midnight get the wrong day because dates are written in local time. Store UTC timestamps and convert to local time only when printing. Add a test with a fixed clock."
-message = "Fix wrong day near midnight by storing UTC"
+prompt = "Make dates safe around midnight: store each entry's timestamp in UTC and convert to local time only when printing. If entries already store UTC, keep that. Add a test with a fixed clock set just before local midnight."
+message = "Store UTC timestamps and print local time"
 
 [[task]]
 id = "category-validation"
@@ -119,8 +119,8 @@ message = "Add --since filter to the monthly report"
 [[task]]
 id = "fix-zero-budget"
 kind = "bugfix"
-prompt = "Bug: `budget status` divides by zero when a category's budget is 0. Show 'no limit' for that category instead and add a test."
-message = "Fix division by zero for a zero budget"
+prompt = "Make sure `budget status` handles a category whose budget is 0: show 'no limit' for it instead of a percentage, and never divide by zero. Change the code if it does not do this yet, and add a test."
+message = "Show no limit for a zero budget"
 
 [[task]]
 id = "undo"
@@ -143,7 +143,7 @@ message = "Add CSV import with duplicate detection"
 [[task]]
 id = "fix-negative-import"
 kind = "bugfix"
-prompt = "Bug: `import` accepts rows with a negative amount without complaint. Reject the whole file with exit code 2 and a message naming the offending line number, and add a test."
+prompt = "Make `import` reject rows with a negative amount: refuse the whole file with exit code 2 and a message naming the offending line number. Change the code if it does not do this yet, and add a test."
 message = "Reject negative amounts in CSV import"
 
 [[task]]
