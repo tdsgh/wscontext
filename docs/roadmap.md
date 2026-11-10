@@ -62,7 +62,8 @@ Plugin, capture with redaction, commit linking, opt-in history sharing, and
 FTS5 index with the query-time gap check, `ctx find`, the session brief at
 start, the `ctx` skill and CLAUDE.md triggers for search.
 
-- **Requirements:** [wscontext-phase-2.md](wscontext-phase-2.md).
+- **Requirements:** [wscontext-phase-2.md](hist/wscontext-phase-2.md).
+- **Build plan:** [build-plan-wscontext-phase-2.md](hist/build-plan-wscontext-phase-2.md).
 - **Monitoring added:** index size and lag; adoption (sessions with a `ctx`
   call, `ctx` before the first search or read).
 - **Stored data volume:** settled before Alpha shares history, since shared
@@ -104,6 +105,7 @@ start, the `ctx` skill and CLAUDE.md triggers for search.
 tree-sitter symbols, co-change from `git log`, `touched_by` edges, then
 name-matched `calls`; `ctx code`, `ctx impact`; `ctx why #symbol` on the graph.
 
+- **Requirements:** [wscontext-phase-3.md](wscontext-phase-3.md).
 - **Monitoring added:** files, symbols and edges by language; build time; stale
   files.
 - **New agent:** `py-graph`.

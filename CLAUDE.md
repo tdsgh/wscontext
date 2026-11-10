@@ -76,8 +76,8 @@ it instead of restating them — `→ ADR-0NN` refers to
 | Install the plugin locally | [README.md](README.md) § Install |
 | Understand why a decision was taken | [docs/design-rationale.md](docs/design-rationale.md) |
 | See the stages and how to run one | [docs/roadmap.md](docs/roadmap.md) |
-| Read the current stage's requirements | [docs/wscontext-phase-2.md](docs/wscontext-phase-2.md) |
-| Build the current stage | [docs/build-plan-wscontext-phase-2.md](docs/build-plan-wscontext-phase-2.md) via `/kit:run-build-plan` |
+| Read the current stage's requirements | [docs/wscontext-phase-3.md](docs/wscontext-phase-3.md) |
+| Build the current stage | [docs/build-plan-wscontext-phase-3.md](docs/build-plan-wscontext-phase-3.md) via `/kit:run-build-plan` |
 
 ## Execution guardrails
 

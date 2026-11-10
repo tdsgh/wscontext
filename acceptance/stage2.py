@@ -1,4 +1,4 @@
-"""Stage-2 acceptance run: the capabilities of docs/wscontext-phase-2.md §4 to §11 against the installed plugin.
+"""Stage-2 acceptance run: the capabilities of docs/hist/wscontext-phase-2.md §4 to §11 against the installed plugin.
 
     .venv/bin/python acceptance/stage2.py [--only NAME ...] [--no-claude] [--list] [--keep]
 
