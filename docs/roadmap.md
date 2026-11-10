@@ -110,6 +110,9 @@ name-matched `calls`; `ctx code`, `ctx impact`; `ctx why #symbol` on the graph.
 - **Benchmark:** the on/off task set, kept in the repository and run headless.
 - **Gate:** the acceptance scenarios for `ctx code`, `ctx impact` and
   `ctx why #symbol` pass, and the benchmark runs end to end.
+- **Carried over from stage 2, to decide when planning:** tool names are
+  indexed as searchable words, so `bash` matches every session that ran a
+  shell command.
 
 ## Alpha — own projects
 
