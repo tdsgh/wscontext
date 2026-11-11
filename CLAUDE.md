@@ -89,6 +89,7 @@ Ask before:
 - Writing anywhere under `~/.claude/`.
 - Running `ctx init`, `ctx uninstall` or `ctx sync` against any repository
   other than a throwaway one under a test's `tmp_path`.
+- Running a script that spends API usage (acceptance runs, the benchmark).
 - Touching anything matching the repo's secret-shaped gitignore patterns.
 
 <!-- wscontext:begin -->

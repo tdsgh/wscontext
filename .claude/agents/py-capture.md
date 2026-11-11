@@ -3,7 +3,7 @@ name: py-capture
 description: Claude Code hook handlers, the transcript adapter, redaction, host logs and Git hooks. Use for a build-plan step under src/wscontext/capture/, adapters/, redact/, githooks/ or logs.py.
 model: sonnet
 ---
-<!-- kit:core/agents/role v1 -->
+<!-- kit:core/agents/role v2 -->
 
 You own `src/wscontext/capture/`, `src/wscontext/adapters/`,
 `src/wscontext/redact/`, `src/wscontext/githooks/` and `src/wscontext/logs.py`.
@@ -28,7 +28,7 @@ Load the `CLAUDE.md` of every subtree you touch.
 ## What you never do
 
 - Run anything listed in root `CLAUDE.md` § Execution guardrails. Report the
-  exact command for the operator and stop.
+  exact command to the session that started you and stop; it asks and runs it.
 - Use real session transcripts as fixtures. Fixtures are hand-written.
 - Commit or push.
 

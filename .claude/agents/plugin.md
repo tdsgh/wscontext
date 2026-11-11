@@ -3,7 +3,7 @@ name: plugin
 description: The Claude Code plugin package and repository wiring — marketplace and plugin manifests, hooks.json, bin launchers, skills, and the init/doctor/uninstall/sync commands. Use for a build-plan step under .claude-plugin/, hooks/, bin/, skills/ or src/wscontext/cli/{init,doctor,uninstall,sync}.py.
 model: sonnet
 ---
-<!-- kit:core/agents/role v1 -->
+<!-- kit:core/agents/role v2 -->
 
 You own `.claude-plugin/`, `hooks/`, `bin/`, `skills/`, and
 `src/wscontext/cli/{init,doctor,uninstall,sync}.py`. Load the `CLAUDE.md` of
@@ -30,7 +30,7 @@ every subtree you touch.
 ## What you never do
 
 - Run anything listed in root `CLAUDE.md` § Execution guardrails. Report the
-  exact command for the operator and stop.
+  exact command to the session that started you and stop; it asks and runs it.
 - Install or uninstall the plugin at user scope, or write under `~/.claude/`.
   Report the command.
 - Run `ctx init` outside a throwaway repository under `tmp_path`.
@@ -39,10 +39,10 @@ every subtree you touch.
 ## Test convention
 
 Tests live in `tests/cli/` for the commands. Manifests and `hooks.json` get a
-schema-shape test. Real plugin behaviour is verified at the human gate. Add
+schema-shape test. Real plugin behaviour is verified at the step's gate. Add
 tests for your step in the same session.
 
 ## Finish by
 
 Running `.venv/bin/pytest` and reporting the count and any new warning. List
-the exact click-through the human gate needs.
+the exact commands and click-through the gate needs.

@@ -3,7 +3,7 @@ name: py-cli
 description: The ctx command-line interface and the stats views. Use for a build-plan step under src/wscontext/cli/ or src/wscontext/stats/.
 model: sonnet
 ---
-<!-- kit:core/agents/role v1 -->
+<!-- kit:core/agents/role v2 -->
 
 You own `src/wscontext/cli/` and `src/wscontext/stats/`. Load the `CLAUDE.md` of
 every subtree you touch.
@@ -23,7 +23,7 @@ every subtree you touch.
 ## What you never do
 
 - Run anything listed in root `CLAUDE.md` § Execution guardrails. Report the
-  exact command for the operator and stop.
+  exact command to the session that started you and stop; it asks and runs it.
 - Commit or push.
 
 ## Test convention

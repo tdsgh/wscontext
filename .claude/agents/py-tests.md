@@ -16,6 +16,10 @@ You own `tests/`. Follow `.claude/rules/kit-python-tests.md`.
 
 ## What you never do
 
+- Run anything listed in root `CLAUDE.md` § Execution guardrails. Report the
+  exact command to the session that started you and stop; it asks and runs it.
+- Run a script that spends API usage. Report the command to the session that
+  started you; it asks and runs it.
 - Add a test dependency without proposing it.
 - Commit or push.
 

@@ -3,7 +3,7 @@ name: py-graph
 description: The code graph — language parts, definitions, imports, calls, co-change, session-to-symbol links, graph refresh and its worker. Use for a build-plan step under src/wscontext/graph/.
 model: sonnet
 ---
-<!-- kit:core/agents/role v1 -->
+<!-- kit:core/agents/role v2 -->
 
 You own `src/wscontext/graph/`, `tests/graph/` and `tests/fixtures/graph/`.
 Load the `CLAUDE.md` of every subtree you touch.
@@ -36,8 +36,9 @@ Load the `CLAUDE.md` of every subtree you touch.
 ## What you never do
 
 - Run anything listed in root `CLAUDE.md` § Execution guardrails. Report the
-  exact command for the operator and stop.
-- Run a script that spends API usage. Report the command for the operator.
+  exact command to the session that started you and stop; it asks and runs it.
+- Run a script that spends API usage. Report the command to the session that
+  started you; it asks and runs it.
 - Commit or push.
 
 ## Test convention

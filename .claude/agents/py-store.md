@@ -3,7 +3,7 @@ name: py-store
 description: Configuration, store layout, records, locks and the wscontext history ref (`refs/wscontext/history`). Use for a build-plan step under src/wscontext/config.py, src/wscontext/gitutil.py, src/wscontext/store/ or src/wscontext/history/.
 model: sonnet
 ---
-<!-- kit:core/agents/role v1 -->
+<!-- kit:core/agents/role v2 -->
 
 You own `src/wscontext/config.py`, `src/wscontext/gitutil.py`,
 `src/wscontext/store/` and `src/wscontext/history/`. Load the `CLAUDE.md` of
@@ -26,7 +26,7 @@ every subtree you touch.
 ## What you never do
 
 - Run anything listed in root `CLAUDE.md` § Execution guardrails. Report the
-  exact command for the operator and stop.
+  exact command to the session that started you and stop; it asks and runs it.
 - Push to a remote other than a bare repository created inside a test's
   `tmp_path`.
 - Commit or push.
