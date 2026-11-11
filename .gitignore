@@ -1,2 +1,4 @@
 !.claude/
 __pycache__/
+docs/build-plan-*.md
+docs/hist/build-plan-*.md

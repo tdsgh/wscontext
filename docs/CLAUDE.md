@@ -12,7 +12,7 @@ folder is in `.claude/rules/kit-docs-gate.md`.
 | `adr.md` | What was decided | Append-only |
 | `roadmap.md` | The stages, their gates, and the loop to run each one | Edited when a stage is added, reshaped or passes its gate |
 | `<area>-phase-N.md` | What one stage of one area will build | Edited until that stage is built, then left alone |
-| `build-plan-<area>-phase-N.md` | The file-level technical design that builds one `<area>-phase-N.md` | Edited until that stage is built, then left alone |
+| `build-plan-<area>-phase-N.md` | The file-level technical design that builds one `<area>-phase-N.md` | Edited until that stage is built, then left alone. Local only: ignored by Git, never committed |
 | `templates/` | The shapes new stage and build-plan documents start from | Kit-managed |
 | `hist/<name>.md` | A stage or build-plan document whose stage is fully built and superseded | Left alone |
 | anything else | Extended reasoning for one decision | Written once, rarely touched |
@@ -28,8 +28,8 @@ folder is in `.claude/rules/kit-docs-gate.md`.
 
 ## Archiving to hist/
 
-Move a superseded stage or build-plan document with `git mv
-docs/<file> docs/hist/<file>`. Before moving, grep the repo for the
+Move a superseded stage document with `git mv docs/<file> docs/hist/<file>`,
+and its build plan with a plain move. Before moving, grep the repo for the
 filename and update every link to the `hist/` path in the same change.
 `architecture.md` and `adr.md` never move.
 

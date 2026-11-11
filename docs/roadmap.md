@@ -19,8 +19,8 @@ Each stage can be used on its own. Stop as soon as the value stops growing.
    notes.
 5. **Record.** Update `architecture.md` (mark the stage built in § Stages)
    and append ADR entries for decisions taken during the build.
-6. **Archive.** When stage N+1 starts, `git mv` stage N's two documents into
-   `hist/` and fix links (see [CLAUDE.md](CLAUDE.md) § Archiving).
+6. **Archive.** When stage N+1 starts, `git mv` stage N's requirements into
+   `hist/`, move its build plan there too, and fix links (see [CLAUDE.md](CLAUDE.md) § Archiving).
 
 ## Gates and milestones
 
@@ -45,7 +45,6 @@ Plugin, capture with redaction, commit linking, opt-in history sharing, and
 `ctx why`, `sessions`, `show`, `forget` and `stats`.
 
 - **Requirements:** [wscontext-phase-1.md](hist/wscontext-phase-1.md).
-- **Build plan:** [build-plan-wscontext-phase-1.md](hist/build-plan-wscontext-phase-1.md).
 - **Monitoring added:** collected data, Claude Code turns, `ctx` calls, capture
   health.
 - **Acceptance run:** a scripted run of the stage-1 scenarios against the
@@ -63,7 +62,6 @@ FTS5 index with the query-time gap check, `ctx find`, the session brief at
 start, the `ctx` skill and CLAUDE.md triggers for search.
 
 - **Requirements:** [wscontext-phase-2.md](hist/wscontext-phase-2.md).
-- **Build plan:** [build-plan-wscontext-phase-2.md](hist/build-plan-wscontext-phase-2.md).
 - **Monitoring added:** index size and lag; adoption (sessions with a `ctx`
   call, `ctx` before the first search or read).
 - **Stored data volume:** settled before Alpha shares history, since shared

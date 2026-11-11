@@ -1,8 +1,8 @@
 # wscontext — stage 2 feature description
 
 Requirements for a person deciding whether these are the right ones. Technical
-design is a later document:
-[build-plan-wscontext-phase-2.md](build-plan-wscontext-phase-2.md).
+design is a later document, `build-plan-wscontext-phase-2.md`, kept local
+and not in the repository.
 
 ## 1. Purpose
 
