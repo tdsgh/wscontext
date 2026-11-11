@@ -76,8 +76,8 @@ def _callers(conn, symbols: list[query.Symbol], path: str, depth: int) -> list[d
 def _caller_block(c: dict, test: bool) -> Block:
     where = f"{c['path']}:{c['start']}-{c['end']}" if c["qualname"] else f"{c['path']}:{c['lines'][0]}"
     title = c["qualname"] or "module level"
-    body = [f"name match: calls `{c['calls']}` ({c['shared']} definition"
-            f"{'s' * (c['shared'] != 1)} share this name)",
+    shared = "1 definition shares" if c["shared"] == 1 else f"{c['shared']} definitions share"
+    body = [f"name match: calls `{c['calls']}` ({shared} this name)",
             "line " + ", ".join(map(str, c["lines"][:5]))]
     if c["depth"] > 1:
         body.append(f"depth {c['depth']}: a caller of a caller")

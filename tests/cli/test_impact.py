@@ -51,6 +51,13 @@ def test_impact_depth_follows_callers_of_callers(world, capsys):
     assert one == 1 and names == {"run_it": 1, "run_twice": 2, "main": 3}
 
 
+def test_impact_caller_line_agrees_with_a_single_shared_definition(world, capsys):
+    _callers(world)
+    data = run_json(world, capsys, "impact", "src/use.py#run_it")
+    caller = next(r for r in data["results"] if r["type"] == "caller")
+    assert caller["shared"] == 1 and "(1 definition shares this name)" in caller["body"][0]
+
+
 def test_impact_on_a_file_uses_its_definitions_and_skips_its_own_calls(world, capsys):
     _callers(world)
     data = run_json(world, capsys, "impact", "src/app.py")
