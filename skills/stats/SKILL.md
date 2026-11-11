@@ -19,6 +19,9 @@ Views:
 - `queries`: each `ctx` call with its result count, answer size, latency, and
   whether it came before the first search or read.
 - `hooks`: Claude Code and Git hook runs, failures and latency per event.
+- `code`: the code graph: languages supported, switched on and unavailable;
+  files by status and per language; last build and refresh; files changed since
+  the graph last read them; size on disk. It never refreshes the graph.
 - `session <id>`: one session in detail.
 
 Add `--json` for machine-readable output. A failure count above zero in

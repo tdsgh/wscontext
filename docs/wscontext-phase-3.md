@@ -61,7 +61,7 @@ every session that called that tool.
 
 **The operator and the agent can see:**
 - For a name: every definition with that name in the repository. Each one shows
-  its file, line range, kind (function, class or method), its first line, and
+  its file, line range, kind (function, class, method or type), its first line, and
   the class it belongs to, if any. Exact matches come first, then names that
   contain the given text.
 - For a file: the definitions it holds, in order, with line ranges; the files it
@@ -318,12 +318,19 @@ self-contained task.
    More runs per arm come at Alpha. A check is a command that succeeds when
    the task was done, such as the story's own tests.
 4. Are sessions linked to functions only through their commits, or also through
-   edits they never committed? Answered: through commits only (§ 15).
+   edits they never committed? Answered, and confirmed when built: functions
+   are linked through commits only. A session that never committed is linked to
+   files only, and `ctx impact` on a file shows it, marked as having no linked
+   commit (§ 15).
 5. Should search get a filter by tool once tool names stop matching as words?
    Answered: no, until real use asks for it.
 6. Can a language be added from outside a wscontext release, for example as a
    separate install or a file in the repository? Answered: no. A new language
    is a separate part inside wscontext and ships with a release (§ 8).
+7. Which kinds of definition does the graph know? Answered: function, class
+   and method for every language. TypeScript adds `type`, for interfaces, type
+   aliases and enums, because "where is this interface defined" is the common
+   TypeScript question.
 
 ## 17. Beyond stage 3
 

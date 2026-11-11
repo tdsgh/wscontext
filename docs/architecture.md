@@ -4,8 +4,8 @@
 What wscontext is, today. Decisions behind it are in [adr.md](adr.md); the
 reasoning behind those is in [design-rationale.md](design-rationale.md).
 
-Stages 1 and 2 are built. § Stages tracks what each later stage delivers.
-Parts planned for stages 3 to 5 are marked.
+Stages 1 to 3 are built. § Stages tracks what each later stage delivers.
+Parts planned for stages 4 and 5 are marked.
 
 ## Purpose and data flow
 
@@ -83,7 +83,9 @@ existing ones) and the CLAUDE.md block. The store is split (→ ADR-004):
   records/sessions/<session-id>.json               normalized sessions            synced
   records/checkpoints/<sha>.json                   commit ↔ session links         synced
   index/history.db                                 FTS5 (vectors: stage 4)        derived
-  index/graph.db                                   code graph (stage 3)           derived
+  index/graph.db                                   code graph                     derived
+  index/graph.lock                                 graph writer lock              host-local
+  index/graph.worker                               claim: a graph worker is starting   host-local
   state/    active.json, turns/<session>.json, materialized.json, pruned.json, last_fetch, last_sweep, locks/, rewrites/   host-local
   logs/     hooks.jsonl, ctx-calls.jsonl (one rotated generation each, .1)                                                  host-local
 ```
@@ -127,9 +129,9 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
 | Git `post-commit` | After a commit | Detached worker writes the checkpoint and commits it to the history ref, when `HEAD` has trailers; spawns the sweep worker under the same condition as `SessionStart` |
 | Git `post-rewrite` | After amend or rebase | Queues old to new pairs; detached worker writes checkpoints for the rewritten SHAs |
 | Git `pre-push` | Before a push | Detached worker pushes `refs/wscontext/history` when sync is configured; the shim runs wscontext only if the chained original exited 0 |
-| Git `post-merge` | Merge | A merge commit created here that carries `AI-Session` trailers is checkpointed like `post-commit`; a fast-forward and `--squash` write nothing. The graph refresh lands in stage 3 |
-| Git `post-checkout` | Branch switch | Installed; the handler is a no-op until stage 3 |
-| `ctx` read commands | `why`, `sessions`, `show`, `stats`, `find`, `brief` | Throttled history fetch when sync is configured; spawns the sweep worker under the same condition as `SessionStart` (src/wscontext/cli/main.py:31) |
+| Git `post-merge` | Merge | Starts the graph worker when `index/graph.db` exists, for every merge. A merge commit created here that carries `AI-Session` trailers is also checkpointed like `post-commit`; a fast-forward and `--squash` write no checkpoint (src/wscontext/githooks/handlers.py:126-150) |
+| Git `post-checkout` | Branch switch | Starts the graph worker when `index/graph.db` exists. A file checkout does nothing (src/wscontext/githooks/handlers.py:153-156) |
+| `ctx` read commands | `why`, `sessions`, `show`, `stats`, `find`, `brief`, `code`, `impact` | Throttled history fetch when sync is configured; spawns the sweep worker under the same condition as `SessionStart` (src/wscontext/cli/main.py:31) |
 
 ### Search, brief and idle sessions
 
@@ -153,7 +155,8 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
 - **Brief.** Inside the `SessionStart` hook, `capture/brief.py` opens the index
   read-only and builds a brief of about 500 tokens. It returns nothing when the
   index is missing (→ ADR-035). The `[retrieval]` settings turn the brief and
-  search off (→ ADR-036).
+  search off (→ ADR-036); `ctx code` and `ctx impact` follow the same switch
+  (→ ADR-044).
 - **Idle sessions.** The `sweep` worker finalizes active sessions that have
   been idle longer than `capture.stale_session_minutes`. Then it prunes
   `raw/`. A sweep that starts while another one runs does nothing
@@ -161,6 +164,62 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
 - **Eval.** `ctx eval` scores search on a fixed corpus in `eval/stage2/`: the
   sessions, the questions, and a Git bundle of the repository the scripted
   sessions worked in. `acceptance/record_corpus.py` recorded the corpus once.
+- **Benchmark.** `acceptance/benchmark.py` runs the tasks in `eval/bench/`
+  headless, with retrieval off and on (→ ADR-043). It is not part of the
+  offline suite.
+
+### Code graph
+
+- **Store.** `index/graph.db`, SQLite in WAL mode, with a schema version in
+  `meta`. A version mismatch recreates the file. A read-only connection never
+  waits on a writer (src/wscontext/graph/db.py:8, 72-96). It holds files,
+  symbols, imports, calls, co-change counts and session links
+  (src/wscontext/graph/db.py:10-41). It is derived and rebuildable
+  (→ ADR-005).
+- **Files read.** The paths `git ls-files -co --exclude-standard` lists, minus
+  deleted ones and minus `[graph] exclude`, whose extension belongs to a
+  switched-on language (src/wscontext/graph/build.py:63-67). A file over 1 MB
+  is recorded as skipped (src/wscontext/graph/scope.py:7).
+- **Language parts.** Each language is one part behind the `LanguagePart`
+  contract (src/wscontext/graph/languages/base.py:78). The registry names the
+  parts (src/wscontext/graph/languages/__init__.py:12-16). Core modules know
+  only the contract (→ ADR-038). The recipe for a new language is
+  [src/wscontext/graph/languages/README.md](../src/wscontext/graph/languages/README.md).
+- **Definitions.** Functions, classes and methods; for TypeScript also
+  interfaces, type aliases and enums, as kind `type`
+  (src/wscontext/graph/languages/_ecmascript.py:20, 125-131).
+- **Imports.** Resolved to files in the repository only
+  (src/wscontext/graph/languages/python.py:150,
+  src/wscontext/graph/languages/_ecmascript.py:279).
+- **Calls.** Stored as the callee's short name, with the enclosing definition.
+  A caller is found by name at query time
+  (src/wscontext/graph/query.py:185-199; → ADR-014).
+- **Co-change.** Pairs of files changed by the same non-merge commit, over the
+  last `[graph] cochange_commits` commits. A commit that touches more than 30
+  files is skipped (src/wscontext/graph/history.py:26, 53-60, 90-95).
+- **Session links.** The changed lines of each linked commit, mapped onto the
+  definitions in that commit's files (src/wscontext/graph/history.py:166;
+  → ADR-040).
+- **Refresh.** Every graph command refreshes within `[graph] query_budget_ms`
+  before it answers (src/wscontext/cli/data.py:127-141; → ADR-041). The answer
+  carries `graph-busy` or `graph-incomplete` when it may be missing results
+  (src/wscontext/cli/data.py:144-157).
+- **Graph worker.** `python -m wscontext.graph.worker refresh <root>` finishes
+  what a budgeted refresh left, and runs after a branch checkout or a merge
+  (src/wscontext/graph/worker.py:1-8; → ADR-039). `index/graph.worker` marks a
+  start in progress, so one start is pending at a time
+  (src/wscontext/graph/build.py:329-348).
+- **Commands.** `ctx code` (definitions of a name, or a file's outline),
+  `ctx impact` (callers, tests, importers, co-changed files and sessions),
+  `ctx why` on `#name`, `ctx rebuild --graph`, `ctx stats code`
+  (src/wscontext/cli/main.py:25-26, src/wscontext/cli/rebuild.py:1,
+  src/wscontext/cli/stats.py:9).
+- **Settings.** `[graph]` in `.wscontext/config.toml`: `languages`, `exclude`,
+  `query_budget_ms`, `cochange_commits` (src/wscontext/config.py:61-70,
+  .wscontext/config.toml:31-37).
+- **Dependencies.** One package per grammar, plus `tree-sitter`
+  (pyproject.toml:6-11; → ADR-042). They load only inside functions of
+  `graph/parse.py` and the language modules.
 
 ## Data model
 
@@ -190,7 +249,7 @@ Every record carries a schema version and the Git author who produced it.
 
 | Component | What it is | Where | Stage |
 |---|---|---|---|
-| `ctx` CLI | Single entrypoint for agent and admin commands, including `find`, `brief`, `rebuild` and `eval` (→ ADR-011); internal `hook`, `worker`, `git-hook` (→ ADR-027) | `src/wscontext/cli/` | 1+ |
+| `ctx` CLI | Single entrypoint for agent and admin commands, including `find`, `brief`, `code`, `impact`, `rebuild` and `eval` (→ ADR-011); internal `hook`, `worker`, `git-hook` (→ ADR-027) | `src/wscontext/cli/` | 1+ |
 | Config | Loads `.wscontext/config.toml` into dataclasses (→ ADR-016) | `src/wscontext/config.py` | 1 |
 | Store | Resolves the store under the Git common dir; reads and writes records | `src/wscontext/store/` | 1 |
 | Hook handlers | One handler per Claude Code event; exit 0, bounded time (→ ADR-009) | `src/wscontext/capture/` | 1 |
@@ -198,24 +257,25 @@ Every record carries a schema version and the Git author who produced it.
 | Redactor | Pattern rules applied before every write (→ ADR-006) | `src/wscontext/redact/` | 1 |
 | History ref | Plumbing writer, union merge, fetch and push of `refs/wscontext/history` (→ ADR-007, ADR-008, ADR-031) | `src/wscontext/history/` | 1 |
 | Git hooks | Shims plus handlers for trailer, checkpoint, rewrite, push; chaining installer | `src/wscontext/githooks/` | 1 |
-| Stats | `ctx stats` views over records, logs and indexes, including stored volume, index, adoption and brief (→ ADR-018, ADR-019) | `src/wscontext/stats/` | 1+ |
+| Stats | `ctx stats` views over records, logs and indexes, including stored volume, index, adoption, brief and the code graph (→ ADR-018, ADR-019) | `src/wscontext/stats/` | 1+ |
 | History index | SQLite FTS5, vectors in stage 4; updated incrementally, and each query first indexes anything missing (→ ADR-013) | `src/wscontext/index/` | 2 (FTS5), 4 (vectors) |
 | Session brief | `SessionStart` context from prior work (→ ADR-012, ADR-035) | `src/wscontext/capture/brief.py` | 2 |
 | Eval | `ctx eval`, which scores search on the recorded corpus, and the script that records the corpus | `src/wscontext/cli/eval.py`, `eval/`, `acceptance/record_corpus.py` | 2 |
-| Code graph | tree-sitter nodes and edges, incremental by content hash (→ ADR-014) | `src/wscontext/graph/` (planned) | 3 |
+| Code graph | tree-sitter definitions, imports, calls, co-change and session links, incremental by content hash (→ ADR-014); language parts under `graph/languages/` (→ ADR-038); graph worker (→ ADR-039) | `src/wscontext/graph/` | 3 |
+| Benchmark | The on/off task set and its runner (→ ADR-043) | `eval/bench/`, `acceptance/benchmark.py` | 3 |
 | Distiller | Async LLM extraction of decision records (→ ADR-015) | `src/wscontext/distill/` (planned) | 4 |
 | Plugin package | Marketplace and plugin manifests, `hooks/hooks.json`, `bin/ctx`, `bin/ctx.cmd`, stable launcher, skills (→ ADR-017) | repo root: `.claude-plugin/`, `hooks/`, `bin/`, `skills/` | 1 |
 
 ## Stages
 
-Stages 1 and 2 are built and passed their acceptance gates. Stages and their gates
+Stages 1 to 3 are built and passed their acceptance gates. Stages and their gates
 are in [roadmap.md](roadmap.md).
 
 | Stage | Delivers | Requirements | Status |
 |---|---|---|---|
 | 1 — Capture and trace | Plugin, capture, redaction, commit linking, history sync, `ctx why/sessions/show/forget`, `ctx stats` | [wscontext-phase-1.md](hist/wscontext-phase-1.md) | built |
 | 2 — History search | FTS5 index, `ctx find`, session brief, skill and CLAUDE.md block, adoption stats, idle-session finalization, stored-volume reduction, retention pruning, moving shared history out of the branches | [wscontext-phase-2.md](hist/wscontext-phase-2.md) | built |
-| 3 — Code graph | Graph, `ctx code`, `ctx impact`, code stats | [wscontext-phase-3.md](wscontext-phase-3.md) | not built |
+| 3 — Code graph | Graph with switchable language parts, `ctx code`, `ctx impact`, `ctx why` on a name, refresh at query time and from Git hooks, code stats, tool names out of search, the on/off benchmark | [wscontext-phase-3.md](wscontext-phase-3.md) | built |
 | 4 — Distillation and semantic search | Decision records with supersession, local embeddings, hybrid ranking | not written | not built |
 | 5 — Finalize | Release, Windows verification, purge and uninstall polish | not written | not built |
 
@@ -223,7 +283,20 @@ are in [roadmap.md](roadmap.md).
 
 - The transcript format is internal to Claude Code and changes between versions;
   derived fields disappear until the adapter catches up (→ ADR-002).
-- `calls` edges are name-matched and ambiguous (→ ADR-014).
+- `calls` are name-matched and ambiguous. `ctx impact` says how many
+  definitions share a name (→ ADR-014).
+- Imports resolve within the repository only. Package imports and `tsconfig`
+  path aliases are not resolved
+  (src/wscontext/graph/languages/_ecmascript.py:279).
+- A file rename or move starts a new history for its definitions and its
+  co-change pairs. Co-change reads `git log --no-renames`
+  (src/wscontext/graph/history.py:55-56).
+- A session that never committed is linked to files only, not to definitions.
+  `ctx impact` on a file lists it as "no linked commit"
+  (src/wscontext/cli/impact.py:161-164).
+- `ctx why` falls back to a regex match for the first definition of a name in
+  a file the graph does not parse, or when the graph fails
+  (src/wscontext/cli/why.py:41-47, 211-215).
 - Removing a session after it was pushed requires rewriting and force-pushing
   the history branch (→ ADR-007).
 - Host squash-merges may drop `AI-Session` trailers; checkpoints then exist only
@@ -235,9 +308,9 @@ are in [roadmap.md](roadmap.md).
   (src/wscontext/cli/forget.py).
 - Page boundaries of `ctx show` are computed per call from the growing raw copy,
   so they shift while the session is active (src/wscontext/cli/show.py:16, 77).
-- `post-checkout` is installed but does nothing until stage 3; `post-merge`
-  checkpoints a merge commit made here and refreshes nothing until stage 3
-  (src/wscontext/githooks/handlers.py:138).
+- `post-checkout` and `post-merge` start the graph worker only when
+  `index/graph.db` exists. In a repository with no graph yet, the first graph
+  command builds it (src/wscontext/githooks/handlers.py:126-133).
 - `bin/ctx.cmd` and the Windows path are untested until Finalize (bin/ctx.cmd:2;
   → ADR-021).
 - `.claude-plugin/plugin.json` has no author field; plugin validation warns.
@@ -262,8 +335,7 @@ are in [roadmap.md](roadmap.md).
 - If a prompt or tool call arrives while its session's final step runs, its
   counts can be lost. The final step deletes the turn state when it ends
   (src/wscontext/capture/worker.py:160).
-- Search matches words only, so paraphrases are missed. Tool names are indexed
-  together with their inputs, so a tool's name matches every session that
-  called it (src/wscontext/index/build.py:84).
+- Search matches words only, so paraphrases are missed. The index keeps the
+  text each tool call was given, not the tool's name (→ ADR-045).
 - Background fetches and pushes cannot ask for a credential. Without a
   credential that works with no prompt, they fail, and `ctx doctor` warns.

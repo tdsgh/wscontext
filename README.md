@@ -1,10 +1,11 @@
 # wscontext
 
 A local harness for Claude Code that captures agent sessions, links them to Git
-commits, and answers why a line of code exists. Stages 1 and 2 of
+commits, and answers why a line of code exists. Stages 1 to 3 of
 [docs/roadmap.md](docs/roadmap.md) are built: capture, commit linking, history
-sharing, history search, the session brief, `ctx why/sessions/show/forget`,
-`ctx find/brief`, `ctx stats`. Architecture:
+sharing, history search, the session brief, the code graph,
+`ctx why/sessions/show/forget`, `ctx find/brief`, `ctx code/impact`,
+`ctx stats`. Architecture:
 [docs/architecture.md](docs/architecture.md).
 
 Prerequisites: Git, Claude Code with plugin support, [uv](https://docs.astral.sh/uv/).
@@ -68,10 +69,39 @@ Otherwise fetches and pushes fail, and `ctx doctor` warns.
 A session gets the brief when a new session starts, after `/clear` and after
 compaction. A resumed session does not get it.
 
-Setting `[retrieval] enabled = false` in `.wscontext/config.toml` turns off both
-the brief and `ctx find`. Then run `ctx init` again, so that the CLAUDE.md
-block no longer has its `ctx find` line.
+Setting `[retrieval] enabled = false` in `.wscontext/config.toml` turns off the
+brief, `ctx find`, `ctx code` and `ctx impact`. Then run `ctx init` again, so
+that the CLAUDE.md block no longer has their lines. `ctx why` keeps working.
 
+## Search code
+
+    ctx code <name> [--kind function|class|method|type] [--limit N] [--full]   # where a name is defined
+    ctx code <path>                    # a file's definitions, imports and importers
+    ctx impact <target> [--depth 1|2|3] [--limit N]   # callers, tests, importers, co-changed files, sessions
+    ctx why <file>#<name>              # also #<name> and <file>#Class.method
+    ctx rebuild [--index | --graph]    # delete and rebuild the search index, the code graph, or both
+
+`<target>` is a file, `FILE#NAME`, `FILE#Class.method`, `#NAME` or `NAME`. Callers
+are matched by name, so `ctx impact` says how many definitions share the name.
+Every graph command first brings the graph up to the working tree. An answer
+may carry `graph-busy` or `graph-incomplete`; rerun it in a moment.
+
+The graph reads Python, TypeScript and JavaScript. These `[graph]` settings are in
+`.wscontext/config.toml`:
+
+- `languages`: the languages switched on.
+- `exclude`: glob patterns on repository paths left out of the graph.
+- `query_budget_ms`: the longest a command waits for the graph.
+- `cochange_commits`: how many recent commits count toward files that change
+  together.
+
+The benchmark compares retrieval off and on over ten tasks. It spends API usage.
+
+    .venv/bin/python acceptance/benchmark.py --list           # the tasks
+    .venv/bin/python acceptance/benchmark.py --verify-checks  # offline
+    .venv/bin/python acceptance/benchmark.py [--runs N] [--max-budget-usd X]
+
+Tasks and reports are in `eval/bench/`.
 ## Retention
 
 Raw transcripts older than `retention.raw_days` (default 180) are removed from
@@ -83,7 +113,7 @@ that many characters. All defaults are in `.wscontext/config.toml`.
 
 ## Statistics
 
-    ctx stats [data|turns|queries|hooks|session <id>] [--since 7d] [--json]
+    ctx stats [data|turns|queries|hooks|code|session <id>] [--since 7d] [--json]
 
 ## Developing
 

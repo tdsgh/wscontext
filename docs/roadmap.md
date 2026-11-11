@@ -102,7 +102,7 @@ start, the `ctx` skill and CLAUDE.md triggers for search.
 
 ## Stage 3 — Code graph
 
-tree-sitter symbols, co-change from `git log`, `touched_by` edges, then
+tree-sitter symbols, co-change from `git log`, session links, then
 name-matched `calls`; `ctx code`, `ctx impact`; `ctx why #symbol` on the graph.
 
 - **Requirements:** [wscontext-phase-3.md](wscontext-phase-3.md).
@@ -112,9 +112,12 @@ name-matched `calls`; `ctx code`, `ctx impact`; `ctx why #symbol` on the graph.
 - **Benchmark:** the on/off task set, kept in the repository and run headless.
 - **Gate:** the acceptance scenarios for `ctx code`, `ctx impact` and
   `ctx why #symbol` pass, and the benchmark runs end to end.
-- **Carried over from stage 2, to decide when planning:** tool names are
-  indexed as searchable words, so `bash` matches every session that ran a
-  shell command.
+- **Gate result (2026-11-11):** passed. The offline suite was green.
+  `acceptance/stage3.py`, `stage2.py` and `stage1.py` were green against the
+  installed 0.3.0 plugin, and the manual checklist passed. The benchmark ran
+  end to end: 20 sessions, 10 tasks per arm. `ctx eval --min 15` put the right
+  result in the top 3 for 20 of 20 questions after tool names left the index.
+  Deviations are listed in the build plan's closing notes.
 
 ## Alpha — own projects
 
@@ -125,7 +128,10 @@ between two machines.
   commits, store and history-branch growth, sync between the machines; whether
   the agent runs `ctx why` before changing code it did not write.
 - **Value:** the on/off benchmark shows fewer search-type tool calls and tokens
-  per task with wscontext on.
+  per task with wscontext on. The stage 3 run did not show it: the story
+  repository is about 940 lines and holds its own decisions in a file. At
+  Alpha the benchmark runs on this repository, with tasks that only past
+  sessions or many files can answer, 3 runs per arm.
 - **Exit:** at least 30 real sessions with no hook failure and no blocked
   commit, and the benchmark result above. Defects found go into stage 4.
 

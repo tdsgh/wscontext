@@ -5,8 +5,8 @@ it improves development, and how it affects Claude Code. The system itself is
 described in [architecture.md](architecture.md); decisions are in
 [adr.md](adr.md).
 
-Stages 1 and 2 are built. Stages 3 and 4 are designed. Everything below marked
-stage 3 or later describes the designed plugin. The effects on quality, speed and cost
+Stages 1 to 3 are built. Stage 4 is designed. Everything below marked
+stage 4 describes the designed plugin. The effects on quality, speed and cost
 are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
 ([roadmap.md](roadmap.md)), not measured results.
 
@@ -41,8 +41,8 @@ are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
 **Monitor everything** (stage 1, more views in later stages)
 - `ctx stats` reports on collected data, Claude Code turns, `ctx` calls and
   hook health, as terminal tables or `--json`.
-- From stage 3 it also reports on the indexed code: files, symbols and edges by
-  language.
+- `ctx stats code` reports on the indexed code: files and symbols by language
+  and the state of the graph (stage 3).
 
 **Search past work** (stage 2)
 - `ctx find "<topic>"` answers "has this been done or discussed before?" It
@@ -55,9 +55,12 @@ are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
 - Stored transcripts keep only what wscontext reads. Local copies older than
   the retention period are removed.
 
-**Search code** (stages 3–4)
+**Search code** (stage 3)
 - `ctx code <name>` answers "where is it defined?"
 - `ctx impact <symbol>` answers "what could this change break?"
+- `ctx why #name` finds a definition by name and shows the sessions behind it.
+
+**Search by meaning** (stage 4)
 - Stage 4 adds decision records with superseded/active status, plus
   meaning-based search.
 

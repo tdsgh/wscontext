@@ -3,7 +3,7 @@
 
 A local harness for Claude Code that captures agent sessions, links them to Git
 commits, indexes them alongside a code graph, and gives the agent one search
-tool (`ctx`) over both. Stages 1 and 2 are built. Stages 3 to 5 are designed.
+tool (`ctx`) over both. Stages 1 to 3 are built. Stages 4 and 5 are designed.
 The system itself is described in
 [docs/architecture.md](docs/architecture.md).
 
@@ -100,4 +100,6 @@ Before changing code you did not write, run `ctx why <file>:<line>` to see the
 session that produced it.
 Before starting on a topic, or when asked whether something was done or
 discussed before, run `ctx find <words>`.
+Before searching for where something is defined, run `ctx code <name>`.
+Before changing a function that other code calls, run `ctx impact <name>`.
 <!-- wscontext:end -->

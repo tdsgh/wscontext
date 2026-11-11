@@ -30,6 +30,8 @@ Load the `CLAUDE.md` of every subtree you touch.
 - An expected-facts file (`expected.json`) is load-bearing. Changing one is a
   deliberate act named in the report, with the reason; never change another
   language's file in a language step.
+- A core graph test module (one that does not test a single language) sets
+  `pytestmark = pytest.mark.usefixtures("unknown_language")`.
 - Never write outside `<store>/index/` or a temporary directory.
 - No POSIX-only calls (→ ADR-020).
 

@@ -596,3 +596,151 @@ session. `--kind session` turns this off
   so the scores are not always in order.
 
 **Guardrail.** A commit whose score is out of order right after a session is intended, not a sort bug.
+
+### ADR-038 — Each language is a part behind one contract, with its own version
+
+**Decision.** The graph core speaks only to the `LanguagePart` contract
+(src/wscontext/graph/languages/base.py:78). A language is one module that
+exposes `PART`. The registry maps a language name to its module and is the only
+place that names one (src/wscontext/graph/languages/__init__.py:12-16). Each
+part has a `version`, and each file row stores the version that parsed it.
+
+**Implications.**
+- Raising a part's `version` reparses that language's files only.
+- A language removed from `[graph] languages` has its rows removed at the next
+  refresh. A part that fails to load is reported as unavailable and never
+  raises (src/wscontext/graph/languages/__init__.py:19-37).
+- Adding a language is a module, a registry line, a grammar dependency,
+  fixtures with an `expected.json`, and a test file
+  (src/wscontext/graph/languages/README.md). A shared contract test runs over
+  every registered language (tests/graph/test_language_contract.py).
+- An `expected.json` is load-bearing. Changing one is a named, deliberate act.
+- Core graph tests opt into the `unknown_language` fixture, which registers a
+  dummy language that no test enables
+  (tests/graph/graph_support.py:103-107). A core test that hard-codes the
+  registry fails at once, not when the next language lands.
+
+**Guardrail.** A core test that lists registered languages by name is a defect.
+
+### ADR-039 — The graph worker is its own module, outside `ctx worker`
+
+**Decision.** `python -m wscontext.graph.worker refresh <root>` runs a full
+graph refresh in a detached process (src/wscontext/graph/worker.py:1-8). The
+Git-hook handlers start it by module name and never import `wscontext.graph`
+(src/wscontext/githooks/handlers.py:126-133).
+
+**Implications.**
+- `ctx worker` stays on the stdlib-only path (→ ADR-027).
+- The worker never waits for `index/graph.lock`. When another writer holds it,
+  it logs `skipped` and exits. It always exits 0.
+- A budgeted refresh that ends incomplete starts the worker after it releases
+  the lock. Unbudgeted refreshes, `ctx rebuild` and busy refreshes start none.
+- `index/graph.worker` is created before a start and removed by the worker
+  just before it tries the lock. While it exists no other refresh starts a
+  worker. A claim older than 60 seconds is replaced
+  (src/wscontext/graph/build.py:38-40, 329-348).
+- `post-checkout` (branch checkout only) and `post-merge` start the worker
+  only when `index/graph.db` exists.
+
+### ADR-040 — Sessions are linked to definitions through the changed lines of their linked commits
+
+**Decision.** For each checkpoint whose commit is present and is not a merge,
+the changed new-side lines of the commit are mapped onto the definitions
+parsed from that commit's version of each file. Each overlap is a row of
+session, commit, path and qualname (src/wscontext/graph/history.py:166).
+
+**Implications.**
+- A session that never committed is linked to files only, through
+  `files_touched` in its record. `ctx impact` on a file lists it, marked "no
+  linked commit" (src/wscontext/cli/impact.py:161-164).
+- Every changed file also gets a link with an empty qualname, in any language.
+- A commit missing from the clone is retried at every refresh and does not
+  count as pending. History from other clones never keeps an answer
+  incomplete.
+- A session's rows are removed when its record is removed and return with it
+  (→ ADR-026).
+- Session links record excluded files. A session that changed vendored code
+  still says so. Co-change does not count them
+  (src/wscontext/graph/history.py:90-95).
+
+### ADR-041 — Graph commands refresh the graph at query time, within a budget
+
+**Decision.** Every graph command runs `refresh` with `[graph] query_budget_ms`
+before it answers (src/wscontext/cli/data.py:127-141). A refresh compares size
+and mtime of the listed files with their rows and reparses changed content by
+hash. It updates co-change when `HEAD` moved and adds session links for new
+checkpoints.
+
+**Implications.**
+- Answers match the working tree, uncommitted edits included (→ ADR-010,
+  ADR-014).
+- A held lock gives an answer from the graph as it is, flagged `graph-busy`.
+  An exhausted budget commits what was parsed, starts the graph worker, and
+  flags `graph-incomplete` (src/wscontext/cli/data.py:144-157).
+- A budgeted refresh parses at least one file. The budget counts files parsed,
+  not files examined.
+- `ctx stats code` never refreshes, locks or starts a worker
+  (src/wscontext/stats/code.py:1).
+
+### ADR-042 — The first runtime dependencies are tree-sitter and one package per grammar
+
+**Decision.** `tree-sitter`, `tree-sitter-python`, `tree-sitter-javascript` and
+`tree-sitter-typescript` are runtime dependencies (pyproject.toml:6-11),
+pinned in `uv.lock`. This extends ADR-016, which allowed third-party packages
+in commands and workers.
+
+**Implications.**
+- Each grammar must ship a wheel for macOS (arm64, x86_64), Linux (x86_64,
+  aarch64) and Windows (amd64), so the plugin builds with no compiler. Check
+  `uv.lock` when adding one.
+- The packages import only inside functions of `graph/parse.py` and the
+  language modules. Nothing on the hook path imports them (→ ADR-016).
+- A dependency change needs a version bump, so an installed plugin rebuilds its
+  environment (→ ADR-023).
+- Each grammar is a separate package, so a language's grammar comes and goes
+  with its part (→ ADR-038).
+
+### ADR-043 — The benchmark lives in `eval/bench/` and runs from `acceptance/benchmark.py`
+
+**Decision.** `eval/bench/tasks.toml` lists the tasks. Each has a check in
+`checks/`, a known-good patch in `solutions/`, and its results go to
+`runs/<date>-<version>.json` and `.md`. `acceptance/benchmark.py` runs each
+task headless in a fresh clone of the stage 2 story repository, once with
+`[retrieval] enabled = false` and once with `true`
+(acceptance/benchmark.py:1-25).
+
+**Implications.**
+- A task is done when its check and the story's own tests pass. The check is
+  copied in only after the session ends.
+- `--verify-checks` proves offline that a check fails on the untouched story
+  and passes with its patch.
+- Figures come from `ctx --json --full stats session`. Turns and cost come
+  from claude's result line (acceptance/benchmark.py:164-185).
+- The benchmark is not part of the offline suite and spends API usage (→ ADR-029).
+- The stage gate requires the run to finish end to end. The value judgement
+  moves to Alpha.
+
+### ADR-044 — The retrieval switch also turns off `ctx code` and `ctx impact`
+
+**Decision.** With `[retrieval] enabled = false`, `ctx code` and `ctx impact`
+answer that they are switched off (src/wscontext/cli/code.py:49,
+src/wscontext/cli/impact.py:90), and `ctx init` writes the CLAUDE.md block
+without their triggers (src/wscontext/cli/init.py:24-39). `ctx why` keeps
+working in both arms. This extends ADR-036.
+
+**Implications.**
+- The two arms of the benchmark differ in every retrieval command except
+  `ctx why` (→ ADR-043).
+- Re-run `ctx init` after changing the switch, so the block matches.
+
+### ADR-045 — Tool names are not indexed
+
+**Decision.** The search index keeps the text each tool call was given and not
+the tool's name (src/wscontext/index/build.py:84,
+src/wscontext/adapters/claude_code.py:343).
+
+**Implications.**
+- A word like `bash` no longer matches every session that ran a shell command.
+- The index schema version is 2 (src/wscontext/index/db.py:8), so every older
+  index rebuilds itself on first use.
+- Search has no filter by tool.

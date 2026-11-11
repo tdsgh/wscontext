@@ -30,6 +30,7 @@ Reading the output:
 Related commands:
 - `ctx sync --setup [--remote NAME]` turns on sharing through a Git remote
   name, not a URL. Nothing is shared before this.
-- `[retrieval] enabled = false` in `.wscontext/config.toml` turns the brief and
-  `ctx find` off; run `ctx init` again so the block drops its `ctx find` line.
+- `[retrieval] enabled = false` in `.wscontext/config.toml` turns the brief,
+  `ctx find`, `ctx code` and `ctx impact` off; run `ctx init` again so the block
+  drops their lines.
 - `ctx uninstall` removes the hooks and the block and keeps captured data.
