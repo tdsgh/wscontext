@@ -1,8 +1,9 @@
 """Built-in redaction rules. Each rule names itself in its replacement marker."""
 
+import hashlib
 import math
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 
@@ -12,6 +13,21 @@ class Rule:
     pattern: re.Pattern[str]
     group: int = 0  # the capture group to replace; 0 replaces the whole match
     check: Callable[[str], bool] | None = None  # veto a match by its replaced text
+
+
+UUID = re.compile(
+    r"(?<![0-9A-Fa-f])[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+    r"(?![0-9A-Fa-f])")
+
+
+def account_digest(token: str) -> str:
+    return hashlib.sha256(token.lower().encode()).hexdigest()
+
+
+def account_rule(digests: Iterable[str]) -> Rule:
+    """Masks a UUID-shaped token whose digest is one of `digests`."""
+    known = frozenset(digests)
+    return Rule("account-id", UUID, check=lambda token: account_digest(token) in known)
 
 
 def _entropy(s: str) -> float:

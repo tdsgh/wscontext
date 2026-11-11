@@ -14,12 +14,13 @@ from wscontext.config import load_config
 from wscontext.graph import build
 from wscontext.graph.languages import load_parts
 from wscontext.logs import HOOKS_LOG, append_log, now_iso
+from wscontext.redact.account import with_account_ids
 from wscontext.store.paths import StorePaths
 
 
 def run(action: str, root: str) -> None:
     store = StorePaths.resolve(Path(root))
-    config = load_config(store.root)
+    config = with_account_ids(load_config(store.root), store)
     started = time.monotonic()
     entry: dict = {"ts": now_iso(), "event": "worker:graph", "ok": True}
     try:

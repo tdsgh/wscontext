@@ -11,6 +11,7 @@ from wscontext.capture.dispatch import run_budgeted
 from wscontext.config import load_config
 from wscontext.githooks.handlers import HANDLERS
 from wscontext.githooks.install import STDIN_HOOKS
+from wscontext.redact.account import with_account_ids
 from wscontext.store.paths import StorePaths
 
 
@@ -20,7 +21,7 @@ def run(hook: str, args: list[str], stdin: str, cwd: Path | None = None) -> dict
     def work(entry: dict, ctx: dict) -> None:
         store = StorePaths.resolve(cwd or Path.cwd())
         ctx["store"] = store
-        ctx["config"] = load_config(store.root)
+        ctx["config"] = with_account_ids(load_config(store.root), store)
         handler = HANDLERS.get(hook)
         if handler is None:
             raise ValueError(f"unknown git hook {hook!r}")

@@ -11,6 +11,7 @@ from wscontext.config import Config, load_config
 from wscontext.gitutil import GitError, git
 from wscontext.history import sync
 from wscontext.history.branch import HISTORY_REF, LEGACY_REF, read_tip
+from wscontext.redact.account import with_account_ids
 from wscontext.store.paths import StorePaths
 from wscontext.store.records import atomic_write
 
@@ -69,7 +70,7 @@ def _setup(args, store: StorePaths) -> Reply:
     lines = [f"sync remote set to {name} in .wscontext/config.toml; commit that file so teammates inherit it"]
     legacy = read_tip(store, sync.legacy_tracking_ref(name))
     try:
-        changed = sync.fetch(store, load_config(store.root), force=True)
+        changed = sync.fetch(store, with_account_ids(load_config(store.root), store), force=True)
         lines.append("history fetched" + (" and materialized" if changed else ": nothing new"))
         lines += _legacy_removed(store, name, legacy)
     except GitError as e:

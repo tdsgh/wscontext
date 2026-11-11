@@ -225,6 +225,19 @@ def _reduce_entry(obj: dict, kind: str, max_chars: int) -> bool:
     return changed
 
 
+def owner_ids(data: bytes) -> set[str]:
+    """The account and organization IDs on the transcript's `session-owner` lines."""
+    ids: set[str] = set()
+    for line in data.splitlines():
+        if b"session-owner" not in line:
+            continue
+        obj = _loads(line.decode("utf-8", errors="replace"))
+        if obj is not None and obj.get("type") == "session-owner":
+            ids.update(v for k in ("accountUuid", "organizationUuid")
+                       if isinstance(v := obj.get(k), str))
+    return ids
+
+
 def reduce(data: bytes, tool_result_max_chars: int = 0) -> bytes:
     """The stored shape of a transcript, line by line: bookkeeping and repeated titles go,
     named fields go, keep-once fields stay where they first appear or change. Each tool

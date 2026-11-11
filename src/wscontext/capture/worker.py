@@ -12,7 +12,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from wscontext.adapters.claude_code import ClaudeCodeAdapter, measure, reduce
+from wscontext.adapters.claude_code import ClaudeCodeAdapter, measure, owner_ids, reduce
 from wscontext.capture.kinds import tool_kind
 from wscontext.capture.state import (active_path, git_author, git_value, idle_sessions,
                                      last_activity, parse_time, read_json, turn_state_path,
@@ -23,7 +23,9 @@ from wscontext.history import sync
 from wscontext.history.branch import branch_path, commit_paths, ls_blobs, read_tip
 from wscontext.index import build as index_build
 from wscontext.logs import HOOKS_LOG, append_log, now_iso
-from wscontext.redact.redactor import redact_bytes
+from wscontext.redact.account import learn_account_file, learn_account_ids, with_account_ids
+from wscontext.redact.rules import UUID, account_digest
+from wscontext.redact.redactor import add_digests, redact_bytes
 from wscontext.store.locks import FileLock, LockTimeout
 from wscontext.store.paths import StorePaths, is_safe_name
 from wscontext.store.records import (RecordError, SessionRecord, TurnRecord, atomic_write,
@@ -59,9 +61,18 @@ def _raw_name(store: StorePaths, session_id: str, record: SessionRecord | None,
     return directory / f"{date}-{session_id}.jsonl"
 
 
-def copy_reduced(source: Path, target: Path, config: Config) -> int:
-    """Store a transcript: reduce it to the stored shape, redact, write. Returns the hit count."""
+def copy_reduced(source: Path, target: Path, config: Config,
+                 store: StorePaths | None = None) -> int:
+    """Store a transcript: reduce it to the stored shape, redact, write. Returns the hit count.
+
+    The account IDs on its `session-owner` lines are masked in this copy. With `store`, their
+    digests are also kept in the store's local state for later writes."""
     data = source.read_bytes()
+    ids = owner_ids(data)
+    if ids:
+        if store is not None:
+            learn_account_ids(store, config, ids)
+        config = add_digests(config, frozenset(account_digest(i) for i in ids if UUID.fullmatch(i)))
     cut = config.capture.tool_result_max_chars
     hits: list[str] = []
     if cut:
@@ -101,6 +112,7 @@ def _final(store: StorePaths, config: Config, session_id: str, source: Path | No
     Reads `source` when it still exists, else the raw copy. Hook-side counts add to the
     record's, so a session finalized and then resumed keeps its earlier counts."""
     copied: list[Path] = []
+    config = with_account_ids(config, store)  # the copy just made may have taught new IDs
     record = _read_record(store, session_id) or SessionRecord(
         session_id=session_id, author=git_author(store), worktree=str(store.root),
         started_at=now_iso())
@@ -120,10 +132,11 @@ def _final(store: StorePaths, config: Config, session_id: str, source: Path | No
         for ref in parsed.subagents:
             if is_safe_name(ref.agent_id) and ref.path is not None:
                 target = store.raw / "subagents" / session_id / f"{ref.agent_id}.jsonl"
-                copy_reduced(ref.path, target, config)
+                copy_reduced(ref.path, target, config, store)
                 copied.append(target)
                 if source_bytes is not None:
                     source_bytes += ref.path.stat().st_size
+        config = with_account_ids(config, store)
         record.subagents = [r.agent_id for r in parsed.subagents if is_safe_name(r.agent_id)]
     else:
         # unknown format: only the hook-side turn times survive; a resumed session adds its own
@@ -198,7 +211,7 @@ def _finalize_idle(store: StorePaths, config: Config) -> tuple[list[str], list[s
             with _session_lock(store, sid):
                 raw = _raw_name(store, sid, _read_record(store, sid), False)
                 if source:
-                    copy_reduced(source, raw, config)
+                    copy_reduced(source, raw, config, store)
                 _final(target, config, sid, source, raw, "idle", ended_at)
             done.append(sid)
         except Exception as e:
@@ -299,6 +312,8 @@ def run(action: str, session_id: str, transcript: str, cwd: str) -> None:
     started = time.monotonic()
     entry = {"ts": now_iso(), "event": f"worker:{action}", "session_id": session_id, "ok": True}
     try:
+        learn_account_file(store, config)
+        config = with_account_ids(config, store)
         if action == "fetch":
             entry["changed"] = sync.fetch(store, config)
             if entry["changed"]:
@@ -319,7 +334,7 @@ def run(action: str, session_id: str, transcript: str, cwd: str) -> None:
                 raw = _raw_name(store, session_id, _read_record(store, session_id),
                                 action == "snapshot")
                 if action != "final" or source.is_file():
-                    entry["redactions"] = copy_reduced(source, raw, config)
+                    entry["redactions"] = copy_reduced(source, raw, config, store)
                 if action == "final":
                     # the final step runs from the raw copy when the transcript is gone
                     _final(store, config, session_id, source if source.is_file() else None,
@@ -332,7 +347,7 @@ def run(action: str, session_id: str, transcript: str, cwd: str) -> None:
         entry["error"] = f"{type(e).__name__}: {e}"
     entry["ms"] = round((time.monotonic() - started) * 1000)
     try:
-        append_log(store, config, HOOKS_LOG, entry)
+        append_log(store, with_account_ids(config, store), HOOKS_LOG, entry)
     except Exception:
         pass
 

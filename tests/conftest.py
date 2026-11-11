@@ -51,3 +51,11 @@ def shared_remote(tmp_path: Path, git_repo: Path) -> tuple[Path, Path, Path]:
         set_identity(tmp_path / name)
         clones.append(tmp_path / name)
     return bare, clones[0], clones[1]
+
+
+@pytest.fixture(autouse=True)
+def no_real_account_file(tmp_path_factory, monkeypatch):
+    """Never read the developer's own ~/.claude.json; a test that needs one sets its own."""
+    from wscontext.redact import account
+    nowhere = tmp_path_factory.mktemp("no-account") / ".claude.json"
+    monkeypatch.setattr(account, "account_file_path", lambda: nowhere)

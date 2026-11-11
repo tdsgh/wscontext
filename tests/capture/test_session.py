@@ -361,3 +361,84 @@ def test_two_ctx_calls_in_one_command_count_once_each(hook):
     rec = read_session(hook.store, "sess-cap1")
     assert rec.ctx_calls == {"why#name": 1, "why": 1}
     assert rec.tool_calls == {"ctx": 1}
+
+
+# --- the operator's account identifiers ---
+
+ACCT_ID = "00000000-0000-4000-8000-0000000000c3"
+ORG_ID = "00000000-0000-4000-8000-0000000000d4"
+SESSION_UUID = "00000000-0000-4000-8000-0000000000e5"
+
+
+def _leaky_transcript(transcript, owner_line: bool) -> None:
+    lines = []
+    if owner_line:
+        lines.append({"type": "session-owner", "sessionId": "sess-cap1",
+                      "accountUuid": ACCT_ID, "organizationUuid": ORG_ID})
+    lines += [
+        {"type": "user", "version": "2.0.5", "timestamp": "2026-01-01T10:03:00Z",
+         "message": {"role": "user", "content": f"my account is {ACCT_ID}, session {SESSION_UUID}"}},
+        {"type": "user", "version": "2.0.5", "timestamp": "2026-01-01T10:04:00Z",
+         "message": {"role": "user", "content": [
+             {"type": "tool_result", "tool_use_id": "t1",
+              "content": f"org {ORG_ID.upper()} and {SESSION_UUID}"}]}},
+    ]
+    with transcript.open("a") as f:
+        f.write("".join(json.dumps(x) + "\n" for x in lines))
+
+
+def _store_texts(hook, git_repo):
+    store = hook.store
+    texts = {str(p): p.read_bytes() for p in store.local.rglob("*") if p.is_file()}
+    for rel, (_, sha, _) in ls_blobs(store, read_tip(store)).items():
+        texts["branch:" + rel] = subprocess.run(["git", "cat-file", "blob", sha], cwd=git_repo,
+                                                capture_output=True).stdout
+    return texts
+
+
+def _fire_all(hook):
+    for event, fixture in [("SessionStart", "session_start"), ("UserPromptSubmit", "user_prompt_submit"),
+                           ("Stop", "stop"), ("SessionEnd", "session_end")]:
+        assert hook(event, fixture)["ok"]
+
+
+def test_owner_line_ids_are_masked_everywhere_and_kept_as_digests(hook, git_repo, transcript):
+    from wscontext.redact.rules import account_digest
+    _leaky_transcript(transcript, owner_line=True)
+    subprocess.run(["git", "checkout", "-q", "-b", f"feat/{ACCT_ID}"], cwd=git_repo, check=True)
+    _fire_all(hook)
+    texts = _store_texts(hook, git_repo)
+    raw = next(v for k, v in texts.items() if "/raw/sessions/" in k)
+    assert raw.count(b"[REDACTED:account-id]") == 2 and SESSION_UUID.encode() in raw
+    assert read_session(hook.store, "sess-cap1").branch == "feat/[REDACTED:account-id]"
+    for name, data in texts.items():
+        for secret in (ACCT_ID, ORG_ID):
+            assert secret.encode() not in data.lower(), name
+    state = json.loads((hook.store.state / "account_ids.json").read_text())
+    assert set(state["sha256"]) == {account_digest(ACCT_ID), account_digest(ORG_ID)}
+    log = (hook.store.logs / "hooks.jsonl").read_text()
+    assert ACCT_ID not in log and ORG_ID not in log
+
+
+def test_account_file_ids_are_masked_without_an_owner_line(hook, git_repo, transcript, tmp_path,
+                                                           monkeypatch):
+    from wscontext.redact import account
+    file = tmp_path / "account.json"
+    file.write_text(json.dumps({"oauthAccount": {"accountUuid": ACCT_ID,
+                                                 "organizationUuid": ORG_ID}}))
+    monkeypatch.setattr(account, "account_file_path", lambda: file)
+    _leaky_transcript(transcript, owner_line=False)
+    _fire_all(hook)
+    texts = _store_texts(hook, git_repo)
+    for name, data in texts.items():
+        for secret in (ACCT_ID, ORG_ID):
+            assert secret.encode() not in data.lower(), name
+    raw = next(v for k, v in texts.items() if "/raw/sessions/" in k)
+    assert raw.count(b"[REDACTED:account-id]") == 2 and SESSION_UUID.encode() in raw
+
+
+def test_without_any_account_source_nothing_is_masked_and_hooks_succeed(hook, git_repo, transcript):
+    _leaky_transcript(transcript, owner_line=False)
+    _fire_all(hook)
+    raw = next(v for k, v in _store_texts(hook, git_repo).items() if "/raw/sessions/" in k)
+    assert ACCT_ID.encode() in raw and b"account-id" not in raw

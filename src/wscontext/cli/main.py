@@ -129,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
     from wscontext.cli.output import error
     from wscontext.config import load_config
     from wscontext.gitutil import GitError
+    from wscontext.redact.account import with_account_ids
     from wscontext.store.paths import StorePaths
     try:
         store = StorePaths.resolve(Path.cwd())
@@ -136,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
         reply = error("not inside a Git repository", args.json)
         store = None
     else:
-        config = load_config(store.root)
+        config = with_account_ids(load_config(store.root), store)
         if name in FETCHING and config.sync.remote:
             _spawn(store, ["fetch", "ctx", "", str(store.root)])
         if name in FETCHING:

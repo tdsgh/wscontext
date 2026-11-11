@@ -2,12 +2,29 @@
 
 import logging
 import re
+from dataclasses import dataclass
 from collections.abc import Iterable
 
 from wscontext.config import Config
-from wscontext.redact.rules import BUILTIN_RULES, Rule
+from wscontext.redact.rules import BUILTIN_RULES, Rule, account_rule
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class AccountConfig(Config):
+    """A config that also carries SHA-256 digests of the operator's account IDs. They come from
+    the store's local state (`redact.account.with_account_ids`), never from `config.toml`, so
+    they are no `Config` field and no setting."""
+    account_digests: frozenset[str] = frozenset()
+
+
+def known_digests(config: Config) -> frozenset[str]:
+    return config.account_digests if isinstance(config, AccountConfig) else frozenset()
+
+
+def add_digests(config: Config, digests: frozenset[str]) -> Config:
+    return AccountConfig(**{**vars(config), "account_digests": known_digests(config) | digests})
 
 
 def compile_extra(patterns: Iterable[str]) -> list[Rule]:
@@ -21,13 +38,17 @@ def compile_extra(patterns: Iterable[str]) -> list[Rule]:
     return rules
 
 
-def redact(text: str, extra_rules: Iterable[str] = ()) -> tuple[str, list[str]]:
+def redact(text: str, extra_rules: Iterable[str] = (),
+           account_digests: Iterable[str] = ()) -> tuple[str, list[str]]:
     """Return the text with every match replaced by `[REDACTED:<rule>]`, and one rule name per hit.
 
-    `extra_rules` are regex strings added to the built-in rules.
+    `extra_rules` are regex strings added to the built-in rules. `account_digests` are
+    SHA-256 digests of account IDs; a UUID-shaped token with one of them is masked.
     """
     hits: list[str] = []
-    for rule in (*BUILTIN_RULES, *compile_extra(extra_rules)):
+    digests = frozenset(account_digests)
+    for rule in (*BUILTIN_RULES, *compile_extra(extra_rules),
+                 *([account_rule(digests)] if digests else [])):
         def replace(m: re.Match[str], rule: Rule = rule) -> str:
             secret = m.group(rule.group)
             if rule.check is not None and not rule.check(secret):
@@ -44,7 +65,7 @@ def redact(text: str, extra_rules: Iterable[str] = ()) -> tuple[str, list[str]]:
 
 
 def redact_text(text: str, config: Config) -> tuple[str, list[str]]:
-    return redact(text, config.redaction.extra_patterns)
+    return redact(text, config.redaction.extra_patterns, known_digests(config))
 
 
 def redact_value(value, config: Config):
@@ -61,5 +82,5 @@ def redact_value(value, config: Config):
 def redact_bytes(data: bytes, config: Config) -> tuple[bytes, list[str]]:
     """The single entry point for content arriving as bytes, e.g. history copied from teammates."""
     text, hits = redact(data.decode("utf-8", errors="surrogateescape"),
-                        config.redaction.extra_patterns)
+                        config.redaction.extra_patterns, known_digests(config))
     return text.encode("utf-8", errors="surrogateescape"), hits

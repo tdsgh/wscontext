@@ -15,6 +15,7 @@ from wscontext.gitutil import git
 from wscontext.history import sync
 from wscontext.history.branch import commit_paths, read_tip
 from wscontext.logs import HOOKS_LOG, append_log, now_iso
+from wscontext.redact.account import with_account_ids
 from wscontext.store.locks import FileLock
 from wscontext.store.paths import StorePaths, is_safe_name
 from wscontext.store.records import (CheckpointRecord, RecordError, read_checkpoint,
@@ -104,7 +105,7 @@ def _checkpoints(store: StorePaths, config: Config, action: str, arg: str) -> in
 
 def run(action: str, root: str, arg: str = "") -> None:
     store = StorePaths.resolve(Path(root))
-    config = load_config(store.root)
+    config = with_account_ids(load_config(store.root), store)
     started = time.monotonic()
     entry: dict = {"ts": now_iso(), "event": f"worker:git-{action}", "ok": True}
     try:

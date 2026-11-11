@@ -9,6 +9,7 @@ from pathlib import Path
 
 from wscontext.capture.handlers import HANDLERS
 from wscontext.config import Config, load_config
+from wscontext.redact.account import with_account_ids
 from wscontext.logs import HOOKS_LOG, append_log, now_iso
 from wscontext.store.paths import StorePaths, is_safe_name
 
@@ -69,7 +70,7 @@ def run(event: str, raw: str) -> dict:
             raise ValueError("missing or unsafe session_id")
         store = StorePaths.resolve(Path(payload.get("cwd") or "."))
         ctx["store"] = store
-        ctx["config"] = load_config(store.root)
+        ctx["config"] = with_account_ids(load_config(store.root), store)
         out = handler(store, ctx["config"], payload)
         if isinstance(out, str) and out:
             ctx["output"] = json.dumps({"hookSpecificOutput": {
