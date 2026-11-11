@@ -59,9 +59,9 @@ def test_skill_text_covers_search_and_the_new_figures():
         assert figure in stats
 
 
-def test_plugin_version_is_0_3_2():
-    assert json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"] == "0.3.2"
-    assert 'version = "0.3.2"' in (ROOT / "pyproject.toml").read_text()
+def test_plugin_version_is_0_3_3():
+    assert json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"] == "0.3.3"
+    assert 'version = "0.3.3"' in (ROOT / "pyproject.toml").read_text()
 
 
 def test_skill_text_covers_the_graph_commands():
