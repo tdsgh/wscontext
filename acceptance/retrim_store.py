@@ -16,8 +16,16 @@ The history ref is then replaced by one root commit holding its tip tree after t
 compare-and-swap, so no blob of an earlier commit stays reachable from it. Records, checkpoints and
 commit links stay. The search index is rebuilt afterwards.
 
+The operator's account IDs (`oauthAccount.accountUuid` and `.organizationUuid` in `~/.claude.json`,
+read only, plus the digests already in `state/account_ids.json`) are masked the way the redactor
+masks them: a UUID-shaped token with a known digest becomes `[REDACTED:account-id]`, in every stored
+copy, record and log, and in the history tip before the squash. No ID is ever printed or written in
+clear; reports give paths and counts. A snapshot, or any other file this tool does not rewrite,
+that still holds an ID is listed. `--apply` also saves the digests to `state/account_ids.json`, so
+later captures mask the same IDs.
+
 The dry run (the default) prints the plan and writes nothing. `--apply` needs `--backup DIR`
-outside the repository: a bundle of the history ref and a copy of `raw/`, `records/` and
+outside the repository: a bundle of the history ref and a copy of `raw/`, `records/`, `logs/` and
 `state/materialized.json` go there first. Both refuse, and `--apply` writes nothing, when any
 history may have been pushed (a Git remote, `[sync] remote`, a tracking ref, the stage-1 branch, or
 another ref holding history commits), when a session still active in `state/active.json` needs a
@@ -51,7 +59,11 @@ from wscontext.history.branch import (HISTORY_REF, LEGACY_REF, commit_paths, ls_
                                       squash_unshared)
 from wscontext.history.sync import shared_tips
 from wscontext.index import build as index_build
-from wscontext.redact.redactor import redact_bytes
+from wscontext.redact import account
+from wscontext.redact.account import ACCOUNT_KEYS as ACCOUNT_FILE_KEYS
+from wscontext.redact.account import learn_account_ids, read_digests
+from wscontext.redact.redactor import add_digests, known_digests, redact_bytes, redact_value
+from wscontext.redact.rules import UUID, account_digest
 from wscontext.store.locks import FileLock, LockTimeout
 from wscontext.store.paths import StorePaths, is_safe_name
 from wscontext.store.records import RecordError, SessionRecord, atomic_write, read_session, write_session
@@ -59,6 +71,7 @@ from wscontext.store.records import RecordError, SessionRecord, atomic_write, re
 MESSAGE = "wscontext: re-trim stored copies"
 LOCK_TIMEOUT = 10
 MISSING = object()
+MARKER = "[REDACTED:account-id]"
 
 
 # --- the re-trim of one stored copy ------------------------------------------------------------
@@ -98,6 +111,57 @@ def account_lines(data: bytes) -> Counter:
                     or (entry_kind(obj, sidechain=True) == "bookkeeping" and _has_key(obj))):
             found[label(obj)] += 1
     return found
+
+
+def account_config(store: StorePaths, config: Config, persist: bool) -> Config:
+    """The config with the account digests: those in the store's state plus the ones from
+    `~/.claude.json`. `persist` saves them to the state; otherwise nothing is written."""
+    ids: set[str] = set()
+    try:
+        oauth = json.loads(account.account_file_path().read_bytes())["oauthAccount"]
+        ids = {oauth[k] for k in ACCOUNT_FILE_KEYS
+               if isinstance(oauth.get(k), str) and UUID.fullmatch(oauth[k])}
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    digests = set(read_digests(store)) | {account_digest(i) for i in ids}
+    if persist and ids:
+        store.state.mkdir(parents=True, exist_ok=True)
+        learn_account_ids(store, config, ids)
+    return add_digests(config, frozenset(digests)) if digests else config
+
+
+def count_ids(data: bytes, config: Config) -> int:
+    """How many known account IDs `data` holds."""
+    digests = known_digests(config)
+    if not digests:
+        return 0
+    text = data.decode("utf-8", errors="surrogateescape")
+    return sum(1 for m in UUID.finditer(text) if account_digest(m.group()) in digests)
+
+
+def snapshot_keys(data: bytes, config: Config) -> Counter:
+    """`account_lines`, plus the count of known IDs under the name `account-id`."""
+    found = account_lines(data)
+    if n := count_ids(data, config):
+        found["account-id"] = n
+    return found
+
+
+def check_masked(path: Path, old: bytes, new: bytes, config: Config) -> list[str]:
+    """What masking changed beyond the account IDs; empty when nothing."""
+    problems = []
+    if count_ids(new, config):
+        problems.append("an ID is still there after masking")
+    if new.count(MARKER.encode()) - old.count(MARKER.encode()) != count_ids(old, config):
+        problems.append("the redactor changed more than the account IDs")
+    if len(old.splitlines()) != len(new.splitlines()):
+        problems.append("the line count changed")
+    if path.suffix == ".json":
+        try:
+            json.loads(new)
+        except ValueError:
+            problems.append("no longer parses as JSON")
+    return problems
 
 
 def rereduce(data: bytes) -> tuple[bytes, Counter, int]:
@@ -210,8 +274,19 @@ class Copy:
     dropped: Counter
     carried: int
     redactions: int
+    ids: int  # account IDs masked
     problems: list[str]
     tip: str | None  # its blob on the history tip, when there is one
+
+
+@dataclass
+class Masked:
+    """A record or log file that holds account IDs."""
+    path: Path
+    rel: str
+    new: bytes
+    ids: int
+    problems: list[str]
 
 
 @dataclass
@@ -222,8 +297,11 @@ class Plan:
     copies: list[Copy] = field(default_factory=list)
     stale_tip: list[str] = field(default_factory=list)  # tip blobs to replace by the current local copy
     records: dict[str, tuple[SessionRecord, int, int]] = field(default_factory=dict)  # sid -> new, stored before, after
-    snapshots: list[tuple[str, Counter, bool]] = field(default_factory=list)  # rel, account lines, on the tip
-    dirty_blobs: list[tuple[str, str, int, int]] = field(default_factory=list)  # sha, path, bookkeeping, account lines
+    masked: list[Masked] = field(default_factory=list)
+    snapshots: list[tuple[str, Counter, bool]] = field(default_factory=list)  # rel, account lines and IDs, on the tip
+    residual: list[tuple[str, int]] = field(default_factory=list)  # files this tool leaves holding IDs
+    index_ids: int = 0  # IDs in the search index, which apply rebuilds
+    dirty_blobs: list[tuple[str, str, int, int, int]] = field(default_factory=list)  # sha, path, bookkeeping, account lines, IDs
     blockers: list[str] = field(default_factory=list)
 
     @property
@@ -318,16 +396,26 @@ def make_plan(store: StorePaths, config: Config) -> Plan:
         sid, sidechain, snapshot = who
         data = path.read_bytes()
         if snapshot:
-            if keys := account_lines(data):
+            if keys := snapshot_keys(data, config):
                 plan.snapshots.append((rel, keys, rel in on_tip))
             continue
         trimmed, dropped, carried = rereduce(data)
-        if trimmed == data:
-            continue
-        problems = check_retrim(data, trimmed, cut, sidechain)
         new, hits = redact_bytes(trimmed, config)
+        if new == data:
+            continue
+        problems = check_retrim(data, trimmed, cut, sidechain) if trimmed != data else []
+        if ids := count_ids(data, config):
+            problems += check_masked(path, trimmed, new, config)
         plan.copies.append(Copy(path, rel, sid, sidechain, data, new, dropped, carried, len(hits),
-                                problems, on_tip.get(rel)))
+                                ids, problems, on_tip.get(rel)))
+
+    for directory in (store.records, store.logs):
+        for path in sorted(p for p in directory.rglob("*") if p.is_file()) if directory.is_dir() else []:
+            data = path.read_bytes()
+            if ids := count_ids(data, config):
+                new = redact_bytes(data, config)[0]
+                plan.masked.append(Masked(path, path.relative_to(store.local).as_posix(), new, ids,
+                                          check_masked(path, data, new, config)))
 
     # tip blobs: each needs the re-trim done locally, or a local copy that already has it
     copies = {c.rel: c for c in plan.copies}
@@ -337,15 +425,15 @@ def make_plan(store: StorePaths, config: Config) -> Plan:
         sid, _, snapshot = _owner(rel)
         blob = contents[sha]
         if snapshot:
-            if account_lines(blob) and not any(s[0] == rel for s in plan.snapshots):
-                plan.snapshots.append((rel, account_lines(blob), True))
+            if (keys := snapshot_keys(blob, config)) and not any(s[0] == rel for s in plan.snapshots):
+                plan.snapshots.append((rel, keys, True))
             continue
         target = store.local.joinpath(*rel.split("/"))
         current = copies[rel].new if rel in copies else (target.read_bytes() if target.is_file() else None)
         if current is not None and current == blob:
             continue
         trimmed = rereduce(blob)[0]
-        if trimmed == blob and rel not in copies:
+        if redact_bytes(trimmed, config)[0] == blob and rel not in copies:
             continue  # a clean tip blob behind a newer local copy: the session's next commit sends it
         if current is None:
             plan.blockers.append(f"{rel}: the history tip holds a copy to re-trim and there is no "
@@ -356,24 +444,59 @@ def make_plan(store: StorePaths, config: Config) -> Plan:
         elif rel not in copies:
             plan.stale_tip.append(rel)
 
-    reachable = [(sha, path) for sha, path in reachable_blobs(store) if _owner(path)]
+    reachable = reachable_blobs(store)
     contents = _blobs(store, sorted({sha for sha, _ in reachable}))
     for sha, path in reachable:
-        book = 0 if _owner(path)[2] else _bookkeeping_lines(contents[sha])
+        who = _owner(path)
+        book = 0 if who and who[2] else _bookkeeping_lines(contents[sha]) if who else 0
         keys = sum(account_lines(contents[sha]).values())
-        if book or keys:
-            plan.dirty_blobs.append((sha, path, book, keys))
+        ids = count_ids(contents[sha], config)
+        if book or keys or ids:
+            plan.dirty_blobs.append((sha, path, book, keys, ids))
+    # a file outside raw/ on the tip that holds an ID: the local copy, once masked, replaces it
+    planned = {m.rel for m in plan.masked}
+    for rel, sha in sorted(on_tip.items()):
+        if _owner(rel) or rel in planned or not count_ids(contents.get(sha, b""), config):
+            continue
+        target = store.local.joinpath(*rel.split("/"))
+        if target.is_file() and not count_ids(target.read_bytes(), config):
+            plan.stale_tip.append(rel)
+        else:
+            plan.blockers.append(f"{rel}: the history tip holds an account ID and there is no clean "
+                                 "local copy to replace it")
 
     for c in plan.copies:
         if c.problems:
             plan.blockers.append(f"{c.rel}: the re-trim fails its check: {'; '.join(c.problems)}")
+    for m in plan.masked:
+        if m.problems:
+            plan.blockers.append(f"{m.rel}: masking fails its check: {'; '.join(m.problems)}")
     for snap, _, tipped in plan.snapshots:
         if tipped:
             plan.blockers.append(f"{snap}: a PreCompact snapshot on the history tip holds account "
                                  "keys; this tool never rewrites snapshots")
     _plan_records(store, plan)
     _check_active(store, config, plan)
+    rewritten = {c.path for c in plan.copies} | {m.path for m in plan.masked} | {
+        store.local.joinpath(*s[0].split("/")) for s in plan.snapshots}
+    plan.residual, plan.index_ids = residual_ids(store, config, rewritten)
     return plan
+
+
+def residual_ids(store: StorePaths, config: Config, skip: set[Path]) -> tuple[list[tuple[str, int]], int]:
+    """(files under the local store, apart from `skip` and the search index, that hold a known ID
+    with the count, and the count in the index)."""
+    found, index = [], 0
+    for path in sorted(p for p in store.local.rglob("*") if p.is_file() and p not in skip):
+        try:
+            n = count_ids(path.read_bytes(), config)
+        except OSError:
+            continue
+        if path.is_relative_to(store.index):
+            index += n
+        elif n:
+            found.append((path.relative_to(store.local).as_posix(), n))
+    return found, index
 
 
 def _plan_records(store: StorePaths, plan: Plan) -> None:
@@ -425,23 +548,33 @@ def _kinds(counts: Counter) -> str:
     return ", ".join(f"{n} {k}" for k, n in sorted(counts.items()))
 
 
-def render(store: StorePaths, plan: Plan) -> str:
+def render(store: StorePaths, config: Config, plan: Plan) -> str:
     out = [f"store: {store.local}"]
     if plan.tip:
         out.append(f"history: {HISTORY_REF} at {plan.tip[:12]}, {len(plan.commits)} commit(s), "
                    f"reflog: {'yes' if plan.reflog else 'none'}")
     else:
         out.append(f"history: no {HISTORY_REF}")
+    digests = known_digests(config)
+    out += ["", f"account IDs: {len(digests)} known digest(s)" + ("" if digests else
+            "; none to mask (no readable ~/.claude.json oauthAccount, none in state/account_ids.json)")]
     out += ["", f"copies to re-trim: {len(plan.copies)}"]
     for c in plan.copies:
         before, after = sum(account_lines(c.old).values()), sum(account_lines(c.new).values())
         out.append(f"  {c.rel}{'  [on the tip]' if c.tip else '  [local only]'}")
-        out.append(f"    drops {_kinds(c.dropped)}")
+        if c.dropped:
+            out.append(f"    drops {_kinds(c.dropped)}")
         if c.carried:
             out.append(f"    keep-once fields moved onto {c.carried} line(s)")
         out.append(f"    {len(c.old):,} -> {len(c.new):,} bytes; account-key lines {before} -> {after}"
-                   + (f"; {c.redactions} redaction(s)" if c.redactions else ""))
+                   + (f"; {c.ids} account-id replacement(s)" if c.ids else "")
+                   + (f"; {c.redactions - c.ids} other redaction(s)" if c.redactions > c.ids else ""))
         out += [f"    CHECK FAILED: {p}" for p in c.problems]
+    if plan.masked:
+        out += ["", f"records and logs to mask: {len(plan.masked)}"]
+        for m in plan.masked:
+            out.append(f"  {m.rel}: {m.ids} account-id replacement(s)")
+            out += [f"    CHECK FAILED: {p}" for p in m.problems]
     if plan.stale_tip:
         out += ["", "tip blobs replaced by the current local copy:", *(f"  {r}" for r in plan.stale_tip)]
     if plan.records:
@@ -451,13 +584,18 @@ def render(store: StorePaths, plan: Plan) -> str:
         out += ["", "PreCompact snapshots holding account keys (never rewritten):"]
         out += [f"  {rel}: {_kinds(keys)}; {'on the history tip' if tip else 'local only, never on the history ref'}"
                 for rel, keys, tip in plan.snapshots]
+    if plan.residual:
+        out += ["", "other files still holding an account ID after this run (never rewritten):"]
+        out += [f"  {rel}: {n} ID(s)" for rel, n in plan.residual]
+    if plan.index_ids:
+        out += ["", f"search index: {plan.index_ids} ID(s), gone when apply rebuilds it"]
     if plan.squash:
         out += ["", f"history rewrite: these {len(plan.commits)} commit(s) are replaced by one root "
                     "commit holding the tip tree after the re-trim:"]
         out += [f"  {sha[:12]} {subject}" for sha, _, subject in (c.partition(" ") for c in plan.commits)]
-        out.append(f"  reachable blobs with bookkeeping or account-key lines: {len(plan.dirty_blobs)}")
-        out += [f"    {sha[:12]} {path}: {book} bookkeeping, {keys} account-key line(s)"
-                for sha, path, book, keys in plan.dirty_blobs]
+        out.append(f"  reachable blobs with bookkeeping, account-key lines or account IDs: {len(plan.dirty_blobs)}")
+        out += [f"    {sha[:12]} {path}: {book} bookkeeping, {keys} account-key line(s), {ids} ID(s)"
+                for sha, path, book, keys, ids in plan.dirty_blobs]
     elif plan.tip:
         out += ["", "history rewrite: none needed"]
     if plan.blockers:
@@ -491,7 +629,7 @@ def write_backup(store: StorePaths, backup: Path) -> list[str]:
         git("bundle", "create", str(bundle), HISTORY_REF, cwd=store.root)
         git("bundle", "verify", str(bundle), cwd=store.root)
         written.append(str(bundle))
-    for name in ("raw", "records"):
+    for name in ("raw", "records", "logs"):
         if (store.local / name).is_dir():
             shutil.copytree(store.local / name, backup / "store" / name)
             written.append(str(backup / "store" / name))
@@ -508,6 +646,8 @@ def apply_plan(store: StorePaths, config: Config, plan: Plan) -> str | None:
     Returns the new tip."""
     for c in plan.copies:
         atomic_write(c.path, c.new)
+    for m in plan.masked:
+        atomic_write(m.path, m.new)
     for rec, _, _ in plan.records.values():
         write_session(store, rec, config)
     tip = read_tip(store)
@@ -517,6 +657,7 @@ def apply_plan(store: StorePaths, config: Config, plan: Plan) -> str | None:
     rels = [c.rel for c in plan.copies if c.rel in on_tip] + plan.stale_tip
     rels += [f"records/sessions/{sid}.json" for sid in plan.records
              if f"records/sessions/{sid}.json" in on_tip]
+    rels += [m.rel for m in plan.masked if m.rel in on_tip and m.rel not in rels]
     if rels:
         commit_paths(store, [store.local.joinpath(*r.split("/")) for r in rels], MESSAGE)
     new = squash_unshared(store, shared_tips(store), MESSAGE) if plan.squash else read_tip(store)
@@ -555,7 +696,7 @@ def _prompts(store: StorePaths, sessions: set[str]) -> dict[str, list]:
     return out
 
 
-def verify(store: StorePaths, plan: Plan, before: Before) -> list[str]:
+def verify(store: StorePaths, config: Config, plan: Plan, before: Before) -> list[str]:
     """What the applied re-trim left wrong; empty when nothing."""
     problems = []
     for path in sorted(store.raw.rglob("*.jsonl")):
@@ -565,13 +706,17 @@ def verify(store: StorePaths, plan: Plan, before: Before) -> list[str]:
             data = path.read_bytes()
             if account_lines(data) or _bookkeeping_lines(data):
                 problems.append(f"{rel}: still holds bookkeeping or account-key lines")
+    problems += [f"{rel}: still holds {n} account ID(s)" for rel, n in residual_ids(store, config, set())[0]]
+    problems += [f"search index: still holds {n} account ID(s)"
+                 for n in [residual_ids(store, config, set())[1]] if n]
     reachable = reachable_blobs(store)
     contents = _blobs(store, sorted({sha for sha, _ in reachable}))
     for sha, path in reachable:
         data, who = contents[sha], _owner(path)
-        if account_lines(data) or (who and not who[2] and _bookkeeping_lines(data)):
+        if account_lines(data) or count_ids(data, config) or (
+                who and not who[2] and _bookkeeping_lines(data)):
             problems.append(f"blob {sha[:12]} {path} reachable from {HISTORY_REF} still holds "
-                            "bookkeeping or account-key lines")
+                            "bookkeeping, account-key lines or account IDs")
     for sid, (rec, _, _) in plan.records.items():
         main = sorted((store.raw / "sessions").glob(f"????-??-??-{sid}.jsonl"))[0]
         sizes = stored_sizes(main, store.raw / "subagents" / sid)
@@ -579,7 +724,7 @@ def verify(store: StorePaths, plan: Plan, before: Before) -> list[str]:
             problems.append(f"records/sessions/{sid}.json: transcript_bytes do not match the copies")
     after = _prompts(store, set(before.prompts))
     problems += [f"session {sid} no longer resolves to the same turns"
-                 for sid in before.prompts if after[sid] != before.prompts[sid]]
+                 for sid in before.prompts if redact_value(after[sid], config) != redact_value(before.prompts[sid], config)]
     if _checkpoints(store) != before.checkpoints:
         problems.append("checkpoint records changed")
     return problems
@@ -597,19 +742,20 @@ def run_apply(store: StorePaths, config: Config, backup: Path) -> int:
     if backup.exists() and (not backup.is_dir() or any(backup.iterdir())):
         print(f"--backup {backup} exists and is not an empty directory", file=sys.stderr)
         return 2
+    config = account_config(store, config, persist=True)
     plan = make_plan(store, config)
     try:
         with store_locks(store, plan.sessions):
             locked = plan.sessions
             plan = make_plan(store, config)  # again, now that no worker can write
-            print(render(store, plan))
+            print(render(store, config, plan))
             if plan.blockers:
                 print("\nnothing written", file=sys.stderr)
                 return 1
             if not plan.sessions <= locked:
                 print("\nthe store changed while planning; nothing written, run again", file=sys.stderr)
                 return 1
-            if not (plan.copies or plan.stale_tip or plan.records or plan.squash):
+            if not (plan.copies or plan.masked or plan.stale_tip or plan.records or plan.squash):
                 print("\nnothing to do")
                 return 0
             before = Before(_prompts(store, plan.sessions), _checkpoints(store))
@@ -628,7 +774,7 @@ def run_apply(store: StorePaths, config: Config, backup: Path) -> int:
     print("index: " + ("locked by another process; run ctx rebuild" if result.get("locked")
                        else f"rebuilt, {result['sessions_indexed']} sessions, "
                             f"{result['commits_indexed']} commits"))
-    problems = verify(store, plan, before)
+    problems = verify(store, config, plan, before)
     print("\nverify: " + ("ok" if not problems else "FAILED"), *(f"  - {p}" for p in problems), sep="\n")
     print("\nThe replaced commits and blobs stay in the object database until Git prunes them; "
           "nothing here runs git gc.")
@@ -650,8 +796,9 @@ def main(argv: list[str] | None = None) -> int:
     config = load_config(store.root)
     if args.apply:
         return run_apply(store, config, args.backup)
+    config = account_config(store, config, persist=False)
     plan = make_plan(store, config)
-    print(render(store, plan))
+    print(render(store, config, plan))
     print("\ndry run: nothing written")
     return 1 if plan.blockers else 0
 

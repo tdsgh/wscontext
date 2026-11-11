@@ -77,6 +77,14 @@ def add_session(store: StorePaths, sid: str, copy: bytes) -> list[Path]:
 
 
 @pytest.fixture
+def home(tmp_path, monkeypatch):
+    """A home directory whose `.claude.json` (Claude Code's account file) a test writes itself."""
+    from wscontext.redact import account
+    monkeypatch.setattr(account, "account_file_path", lambda: tmp_path / "home" / ".claude.json")
+    return tmp_path / "home"
+
+
+@pytest.fixture
 def world(git_repo, monkeypatch):
     """One session captured before WP10, committed twice to the history, plus a checkpoint."""
     store = StorePaths.resolve(git_repo)
@@ -301,3 +309,61 @@ def test_snapshots_are_reported_and_never_rewritten(world, tmp_path, capsys):
     assert code == 0, out
     assert "1 attachment:credential_org, 2 session-owner; local only" in out
     assert snap.read_bytes() == data
+
+
+ACCOUNT = "3f2a9c1e-5b7d-4e8a-9c01-aa11bb22cc33"
+ORG = "7d6e5f40-1a2b-4c3d-8e9f-0123456789ab"
+OTHER = "11111111-2222-4333-8444-555555555555"
+
+
+def with_account_ids(world, home, tmp_path):
+    """The `world` store, its copy, a record and a log holding the made-up account IDs."""
+    repo, store, _ = world
+    home.mkdir(parents=True, exist_ok=True)
+    (home / ".claude.json").write_text(json.dumps(
+        {"oauthAccount": {"accountUuid": ACCOUNT, "organizationUuid": ORG}}))
+    raw = next((store.raw / "sessions").glob("*.jsonl"))
+    raw.write_bytes(raw.read_bytes() + _line(
+        {"type": "user", "uuid": "u9", "message": {"role": "user", "content":
+         f"mine {ACCOUNT} org {ORG.upper()} session {OTHER}"}, **CTX}))
+    rec = store.records / "sessions" / f"{SID}.json"
+    data = json.loads(rec.read_text())
+    data["git_branch"] = f"user/{ACCOUNT}"
+    rec.write_text(json.dumps(data, sort_keys=True))
+    log = put_store_file(store.local, "logs/hook.log", f"ran for {ORG}\nnext {OTHER}\n".encode())
+    commit_paths(store, [raw, rec], "wscontext: session")
+    return repo, store, log
+
+
+def test_dry_run_reports_account_ids_by_count_and_writes_nothing(world, home, tmp_path, capsys):
+    repo, store, log = with_account_ids(world, home, tmp_path)
+    before = files(store)
+    assert rs.main(["--repo", str(repo)]) == 0
+    out = capsys.readouterr().out
+    assert "2 account-id replacement(s)" in out and f"logs/hook.log: 1 account-id" in out
+    assert "records/sessions" in out
+    assert not any(i in out for i in (ACCOUNT, ORG, ORG.upper())) and files(store) == before
+    assert not (store.state / "account_ids.json").exists()
+
+
+def test_apply_masks_copies_records_logs_and_the_squashed_history(world, home, tmp_path, capsys):
+    repo, store, log = with_account_ids(world, home, tmp_path)
+    code, out = apply(repo, tmp_path, capsys)
+    assert code == 0 and "verify: ok" in out, out
+    assert not any(i in out for i in (ACCOUNT, ORG, ORG.upper()))
+    blobs = [*files(store).values(), *reachable(repo).values()]
+    assert [] == [(n, b[max(0, b.lower().find(i.encode()) - 30):][:100]) for n, b in {**files(store), **reachable(repo)}.items()
+                  for i in (ACCOUNT, ORG) if i.encode() in b.lower()]
+    assert any(b"[REDACTED:account-id]" in b for b in files(store).values())
+    assert log.read_bytes() == b"ran for [REDACTED:account-id]\nnext " + OTHER.encode() + b"\n"
+    assert OTHER.encode() in next((store.raw / "sessions").glob("*.jsonl")).read_bytes()
+    assert (store.state / "account_ids.json").is_file()
+    assert not any(i.encode() in (store.state / "account_ids.json").read_bytes() for i in (ACCOUNT, ORG))
+
+
+def test_a_snapshot_holding_an_id_is_listed_and_apply_does_not_pass(world, home, tmp_path, capsys):
+    repo, store, _ = with_account_ids(world, home, tmp_path)
+    put_store_file(store.local, f"raw/sessions/2026-11-06-pc20261106T100000Z-{SID}.jsonl", f"{ACCOUNT}\n".encode())
+    assert rs.main(["--repo", str(repo)]) == 0
+    out = capsys.readouterr().out
+    assert "PreCompact snapshots" in out and "1 account-id" in out and ACCOUNT not in out
