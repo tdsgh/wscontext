@@ -25,13 +25,18 @@ FIND_TRIGGER = ("Before starting on a topic, or when asked whether something was
                 "discussed before, run `ctx find <words>`.\n")
 
 
+GRAPH_TRIGGERS = ("Before searching for where something is defined, run `ctx code <name>`.\n"
+                  "Before changing a function that other code calls, run `ctx impact <name>`.\n")
+
+
 def claude_block(retrieval: bool = True) -> str:
-    """The CLAUDE.md block: triggers only. The `ctx find` trigger is left out while retrieval is off."""
+    """The CLAUDE.md block: triggers only. The `ctx find`, `ctx code` and `ctx impact` triggers are
+    left out while retrieval is off."""
     return (f"{BLOCK_BEGIN}\n## wscontext\n\n"
             "Past agent sessions in this repository are captured and linked to commits.\n"
             "Before changing code you did not write, run `ctx why <file>:<line>` to see the\n"
             "session that produced it.\n"
-            + (FIND_TRIGGER if retrieval else "")
+            + (FIND_TRIGGER + GRAPH_TRIGGERS if retrieval else "")
             + f"{BLOCK_END}\n")
 
 

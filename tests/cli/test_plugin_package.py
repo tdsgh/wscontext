@@ -59,8 +59,19 @@ def test_skill_text_covers_search_and_the_new_figures():
         assert figure in stats
 
 
-def test_plugin_version_is_0_2_0():
-    assert json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"] == "0.2.1"
+def test_plugin_version_is_0_3_0():
+    assert json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"] == "0.3.0"
+    assert 'version = "0.3.0"' in (ROOT / "pyproject.toml").read_text()
+
+
+def test_skill_text_covers_the_graph_commands():
+    ctx = (ROOT / "skills" / "ctx" / "SKILL.md").read_text()
+    description = re.search(r"^description: (.+)$", ctx, re.M)[1]
+    assert "where something is defined" in description and "what a change affects" in description
+    assert len(description) < 1536
+    for text in ("ctx code <name|path>", "ctx impact <target>", "ctx why #<name>", "ctx rebuild [--index | --graph]",
+                 "name match", "graph-incomplete", "switched off"):
+        assert text in ctx
 
 
 def test_git_hook_shims_are_in_the_package():

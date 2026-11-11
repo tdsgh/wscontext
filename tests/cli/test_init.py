@@ -474,3 +474,51 @@ def test_doctor_stale_tracking_refs_and_the_history_move(shared_remote, opts, mo
     assert run_git(bare, "for-each-ref", LEGACY_REF).strip() == ""
     _, out, _ = ctx(capsys, "doctor")
     assert f"[  OK] history ref: {HISTORY_REF}" in out
+
+
+def test_block_triggers_for_the_graph_follow_the_switch():
+    on, off = ctx_init.claude_block(True), ctx_init.claude_block(False)
+    assert "`ctx code <name>`" in on and "`ctx impact <name>`" in on
+    assert "ctx code" not in off and "ctx impact" not in off
+
+
+def test_doctor_flags_a_block_without_the_graph_triggers(repo, opts, capsys):
+    ctx(capsys, *opts, "init")
+    claude = repo / "CLAUDE.md"
+    claude.write_text(claude.read_text().replace(ctx_init.GRAPH_TRIGGERS, ""))
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    line = _doctor_line(out, "claude.md block")
+    assert line.startswith("[WARN]") and "lacks the `ctx code` and `ctx impact` triggers" in line
+    ctx(capsys, *opts, "init")
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    assert _doctor_line(out, "claude.md block").startswith("[  OK]")
+
+
+def test_doctor_reports_the_parser_languages_and_graph(repo, opts, capsys):
+    ctx(capsys, *opts, "init")
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    assert "[  OK] code parser: tree-sitter" in _doctor_line(out, "code parser")
+    for name in ("python", "typescript", "javascript"):
+        assert _doctor_line(out, f"language {name}").endswith(": on")
+    assert "not built yet" in _doctor_line(out, "code graph")
+    config = repo / ".wscontext" / "config.toml"
+    config.write_text(config.read_text().replace('"javascript"]', '"cobol"]'))
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    assert _doctor_line(out, "language javascript").endswith(": off")
+    assert "unknown" in _doctor_line(out, "language cobol")
+    (repo / "a.py").write_text("def f():\n    pass\n")
+    run_git(repo, "add", "a.py")
+    ctx(capsys, *opts, "rebuild", "--graph")
+    (repo / "a.py").write_text("def f():\n    return 1\n\n\ndef g():\n    pass\n")
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    line = _doctor_line(out, "code graph")
+    assert "1 files" in line and "last refresh 0 min ago" in line and "1 stale file" in line
+
+
+def test_doctor_reports_a_language_whose_grammar_is_unavailable(repo, opts, capsys, monkeypatch):
+    from wscontext.cli import doctor
+    ctx(capsys, *opts, "init")
+    monkeypatch.setattr(doctor, "load_parts", lambda enabled: ([], ["typescript"]))
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    line = _doctor_line(out, "language typescript")
+    assert line.startswith("[WARN]") and "grammar is unavailable" in line

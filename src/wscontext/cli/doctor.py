@@ -4,11 +4,14 @@ import json
 import os
 import re
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
 from wscontext.cli.init import claude_block, current_block, launcher_path
 from wscontext.cli.output import Reply
 from wscontext.config import Config
+from wscontext.graph import build, db as graph_db
+from wscontext.graph.languages import REGISTRY, load_parts
 from wscontext.githooks.install import CHAINED_SUFFIX, HOOKS, hooks_dir, _is_shim
 from wscontext.gitutil import GitError, git
 from wscontext.history.branch import HISTORY_REF, LEGACY_REF, read_tip
@@ -185,9 +188,69 @@ def _block(store: StorePaths, config: Config) -> dict:
         return _item("claude.md block", WARN,
                      f"the block {'lacks' if on else 'has'} the `ctx find` trigger, but retrieval is {'on' if on else 'off'}",
                      REINIT)
+    if ("ctx code" in block or "ctx impact" in block) != on:
+        return _item("claude.md block", WARN,
+                     f"the block {'lacks' if on else 'has'} the `ctx code` and `ctx impact` triggers, "
+                     f"but retrieval is {'on' if on else 'off'}", REINIT)
     if block != claude_block(on):
         return _item("claude.md block", WARN, "the block is out of date", REINIT)
     return _item("claude.md block", OK, "matches the retrieval switch " + ("(on)" if on else "(off, no `ctx find` trigger)"))
+
+
+def _parser() -> dict:
+    try:
+        import tree_sitter
+    except ImportError:
+        return _item("code parser", WARN, "tree-sitter is not installed, so `ctx code` and `ctx impact` cannot run",
+                     "run any `ctx` command from the plugin; it builds the environment (needs uv and network)")
+    return _item("code parser", OK, f"tree-sitter {getattr(tree_sitter, '__version__', 'installed')}")
+
+
+def _languages(config: Config) -> list[dict]:
+    enabled = list(dict.fromkeys(config.graph.languages))
+    _, failed = load_parts(enabled)
+    items = []
+    for name in sorted({*REGISTRY, *enabled}):
+        if name not in REGISTRY:
+            items.append(_item(f"language {name}", WARN, "unknown: wscontext has no part for it",
+                               f"remove it from [graph] languages, or use one of: {', '.join(sorted(REGISTRY))}"))
+        elif name not in enabled:
+            items.append(_item(f"language {name}", OK, "off"))
+        elif name in failed:
+            items.append(_item(f"language {name}", WARN, "on, but its grammar is unavailable",
+                               "run any `ctx` command from the plugin to rebuild its environment; "
+                               "the other languages keep working"))
+        else:
+            items.append(_item(f"language {name}", OK, "on"))
+    return items
+
+
+def _graph(store: StorePaths, config: Config) -> dict:
+    absent = _item("code graph", OK, "not built yet: the first `ctx code`, `ctx impact` or `ctx rebuild --graph` builds it")
+    try:
+        conn = graph_db.connect(store, readonly=True)
+    except graph_db.GraphUnavailable:
+        return absent
+    try:
+        summary = graph_db.summary(conn)
+    except sqlite3.DatabaseError:
+        return _item("code graph", WARN, "cannot be read", "run `ctx rebuild --graph`")
+    finally:
+        conn.close()
+    last = summary["last_refresh"] or summary["last_build"]
+    age = "never refreshed"
+    if last:
+        seconds = (datetime.now(timezone.utc) - datetime.fromisoformat(last["at"].replace("Z", "+00:00"))).total_seconds()
+        age = "last refresh " + (f"{int(seconds // 86400)} d ago" if seconds >= 86400 else
+                                 f"{int(seconds // 3600)} h ago" if seconds >= 3600 else f"{int(seconds // 60)} min ago")
+    files = sum(c["files"] for c in summary["by_language"].values())
+    try:
+        changed = build.changed_files(store, config)
+    except Exception:
+        changed = None
+    stale = "stale files unknown" if changed is None else f"{changed} stale file{'s' * (changed != 1)}"
+    return _item("code graph", OK if not changed else WARN, f"{files} files, {age}, {stale}",
+                 "the next `ctx code` or `ctx impact` refreshes it; `ctx rebuild --graph` rebuilds it")
 
 
 def _size_warnings(store: StorePaths, config: Config) -> list[dict]:
@@ -224,7 +287,7 @@ def run(args, store: StorePaths, config: Config) -> Reply:
     items += _git_hooks(args, store)
     items += [_claude_hooks(store), _store(store), _sync(store, config)]
     if enabled:
-        items += [_fts5(config), _search_index(store, config), _history_layout(store, config),
+        items += [_parser(), *_languages(config), _graph(store, config), _fts5(config), _search_index(store, config), _history_layout(store, config),
                   _block(store, config), *_size_warnings(store, config), *_stale_tracking(store)]
     code = int(any(i["status"] == FAIL for i in items))
     if args.json:
