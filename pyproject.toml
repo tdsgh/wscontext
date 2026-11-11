@@ -30,3 +30,4 @@ packages = ["src/wscontext"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-n auto --dist load"
+filterwarnings = ["error"]

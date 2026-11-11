@@ -128,12 +128,15 @@ def _sync(store: StorePaths, config: Config) -> dict:
 
 
 def _fts5(config: Config) -> dict:
+    conn = sqlite3.connect(":memory:")
     try:
-        sqlite3.connect(":memory:").execute("CREATE VIRTUAL TABLE t USING fts5(x)")
+        conn.execute("CREATE VIRTUAL TABLE t USING fts5(x)")
     except sqlite3.Error:
         return _item("search engine", FAIL if config.retrieval.enabled else WARN,
                      f"SQLite {sqlite3.sqlite_version} in this Python has no FTS5, so `ctx find` cannot run",
                      "use a Python build whose SQLite includes FTS5 (the python.org, uv and Homebrew builds do)")
+    finally:
+        conn.close()
     return _item("search engine", OK, f"SQLite {sqlite3.sqlite_version} with FTS5")
 
 
