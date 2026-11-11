@@ -120,11 +120,17 @@ name-matched `calls`; `ctx code`, `ctx impact`; `ctx why #symbol` on the graph.
 ## Alpha — own projects
 
 Stages 1 to 3 in daily use on the developer's own repositories, with sync on
-between two machines.
+between two checkouts of one repository.
 
+- **Started (2026-11-11):** plugin 0.3.4 is installed for the user. Four
+  repositories capture sessions: this one and three private ones. This
+  repository is public, so sync stays off here and its session history is
+  never pushed. Sync is tested with two checkouts of one private repository
+  on one machine, through its remote. Sessions count toward the exit from
+  this date.
 - **Watch:** `ctx stats hooks` (failures, p95 against the budget), blocked
-  commits, store and history-branch growth, sync between the machines; whether
-  the agent runs `ctx why` before changing code it did not write.
+  commits, store and history-branch growth, sync between the two checkouts;
+  whether the agent runs `ctx why` before changing code it did not write.
 - **Value:** the on/off benchmark shows fewer search-type tool calls and tokens
   per task with wscontext on. The stage 3 run did not show it: the story
   repository is about 940 lines and holds its own decisions in a file. At
