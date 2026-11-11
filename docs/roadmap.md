@@ -138,6 +138,9 @@ between two checkouts of one repository.
   sessions or many files can answer, 3 runs per arm.
 - **Exit:** at least 30 real sessions with no hook failure and no blocked
   commit, and the benchmark result above. Defects found go into stage 4.
+- **Rust in the code graph:** a Rust language part, built after the sync test
+  and the benchmark. Requirements:
+  [graph-rust-phase-1.md](graph-rust-phase-1.md).
 
 ## Stage 4 — Distillation and semantic search
 
