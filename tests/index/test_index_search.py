@@ -126,3 +126,14 @@ def test_a_commit_matching_only_weightless_terms_keeps_its_own_rank(store):
     refs = [h.ref for h in run(store, "uploader notes")]
     # "notes" is in 5 of 6 rows: the commit matches it but is not pulled up behind s1
     assert set(refs[:2]) == {"s1", "s2"} and sha in refs[2:]
+
+
+def test_a_tool_name_alone_does_not_match_a_session(store):
+    add_session(store, "only-tool", [("check the disk", "done", "df -h")], date="2026-03-01")
+    add_session(store, "in-command", [("check the shell", "done", "bash -c 'echo hi'")],
+                date="2026-03-02")
+    add_session(store, "in-prompt", [("why does bash fail here", "it is quoting", "")],
+                date="2026-03-03")
+    refresh(store)
+    refs = {h.ref for h in run(store, "bash", kind="session", limit=10)}
+    assert refs == {"in-command", "in-prompt"}

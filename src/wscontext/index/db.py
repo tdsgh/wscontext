@@ -5,7 +5,7 @@ from pathlib import Path
 
 from wscontext.store.paths import StorePaths
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);

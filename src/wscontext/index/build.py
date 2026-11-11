@@ -81,7 +81,7 @@ def _exchange_docs(turns: list[Turn], subagent: bool) -> list[tuple]:
     for t in turns:
         prompt = next((i.text for i in t.items if i.kind == "prompt"), "")
         reply = "\n".join(i.text for i in t.items if i.kind == "text" and i.text)
-        tools = "\n".join(f"{i.name} {i.text}".strip() for i in t.items if i.kind == "tool_call")
+        tools = "\n".join(i.text for i in t.items if i.kind == "tool_call" and i.text)
         if prompt or reply or tools:
             docs.append((None if subagent else t.index, prompt, reply, tools))
     return docs
