@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -19,7 +20,9 @@ import benchmark as bm  # noqa: E402
 from stage1 import Acc, Claude, Fail  # noqa: E402
 
 from wscontext.cli.main import main as ctx_main
-from wscontext.config import Config
+from wscontext.capture import worker
+from wscontext.config import Config, load_config
+from wscontext.history.branch import commit_paths
 from wscontext.store.paths import StorePaths
 from wscontext.store.records import SessionRecord, TurnRecord, write_session
 
@@ -276,3 +279,24 @@ def test_the_dry_run_prints_the_plan_and_calls_nothing(monkeypatch, capsys):
 def test_an_unknown_task_stops_before_anything_runs(capsys):
     assert bm.main(["--dry-run", "--tasks", "nope"]) == 1
     assert "unknown task(s): nope" in capsys.readouterr().err
+
+
+def test_a_clone_keeps_every_corpus_session_when_the_clock_is_two_years_ahead(tmp_path, monkeypatch):
+    # The setup copies the corpus into the store without committing it to the history ref, and
+    # pruning only removes a copy whose blob is on the history tip, so the 180-day retention never
+    # reaches it. A history tip with something else on it makes the prune pass do its full check.
+    acc = FakeAcc(tmp_path, None, None, 1.0, ENV)
+    repo = tmp_path / "clone"
+    bm.prepare(acc, repo, "on")
+    store = StorePaths.resolve(repo)
+    other = store.raw / "sessions" / "2026-01-01-other.jsonl"
+    other.write_text("{}\n")
+    assert commit_paths(store, [other], "unrelated") is not None
+    before = sorted(p for p in store.raw.rglob("*") if p.is_file())
+    assert len(before) > 1
+    later = time.time() + 2 * 365 * 86400
+    monkeypatch.setattr(worker.time, "time", lambda: later)
+    assert worker._prune(store, load_config(repo)) == []
+    assert sorted(p for p in store.raw.rglob("*") if p.is_file()) == before
+    assert len(list((store.records / "sessions").glob("*.json"))) == len(
+        list((bm.STORY / "corpus" / "records" / "sessions").glob("*.json")))
