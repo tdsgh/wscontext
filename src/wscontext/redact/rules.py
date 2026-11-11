@@ -20,10 +20,6 @@ UUID = re.compile(
     r"(?![0-9A-Fa-f])")
 
 
-EMAIL = re.compile(
-    r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
-
-
 def account_digest(token: str) -> str:
     return hashlib.sha256(token.lower().encode()).hexdigest()
 
@@ -32,12 +28,6 @@ def account_rule(digests: Iterable[str]) -> Rule:
     """Masks a UUID-shaped token whose digest is one of `digests`."""
     known = frozenset(digests)
     return Rule("account-id", UUID, check=lambda token: account_digest(token) in known)
-
-
-def account_email_rule(digests: Iterable[str]) -> Rule:
-    """Masks an email-shaped token whose digest is one of `digests`."""
-    known = frozenset(digests)
-    return Rule("account-email", EMAIL, check=lambda token: account_digest(token) in known)
 
 
 def _entropy(s: str) -> float:

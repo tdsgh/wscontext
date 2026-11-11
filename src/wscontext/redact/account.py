@@ -1,7 +1,7 @@
-"""The operator's own account IDs and email, known to the store only as SHA-256 digests. Stdlib only.
+"""The operator's own account IDs, known to the store only as SHA-256 digests. Stdlib only.
 
 The digests live in the store's local state (`state/account_ids.json`), never in history.
-No ID or address is written anywhere in clear, and no function here puts one in an error or a log.
+No ID is written anywhere in clear, and no function here puts one in an error or a log.
 """
 
 import json
@@ -9,12 +9,12 @@ from pathlib import Path
 
 from wscontext.config import Config
 from wscontext.redact.redactor import add_digests
-from wscontext.redact.rules import EMAIL, UUID, account_digest
+from wscontext.redact.rules import UUID, account_digest
 from wscontext.store.locks import FileLock
 from wscontext.store.paths import StorePaths
 from wscontext.store.records import write_json
 
-ACCOUNT_KEYS = ("accountUuid", "organizationUuid", "emailAddress")
+ACCOUNT_KEYS = ("accountUuid", "organizationUuid")
 
 
 def account_file_path() -> Path:
@@ -42,9 +42,8 @@ def with_account_ids(config: Config, store: StorePaths) -> Config:
 
 
 def learn_account_ids(store: StorePaths, config: Config, ids: set[str]) -> None:
-    """Add the digest of every UUID-shaped or email-shaped token in `ids` to the store's local state."""
-    new = {account_digest(i) for i in ids
-           if isinstance(i, str) and (UUID.fullmatch(i) or EMAIL.fullmatch(i))}
+    """Add the digest of every UUID-shaped ID in `ids` to the store's local state."""
+    new = {account_digest(i) for i in ids if isinstance(i, str) and UUID.fullmatch(i)}
     if new <= read_digests(store):
         return
     path = digests_path(store)
@@ -53,7 +52,7 @@ def learn_account_ids(store: StorePaths, config: Config, ids: set[str]) -> None:
 
 
 def learn_account_file(store: StorePaths, config: Config) -> None:
-    """Learn `oauthAccount.accountUuid`, `.organizationUuid` and `.emailAddress` from Claude Code's account
+    """Learn `oauthAccount.accountUuid` and `.organizationUuid` from Claude Code's account
     file. A missing, unreadable or differently shaped file teaches nothing and is not an error."""
     try:
         account = json.loads(account_file_path().read_bytes())["oauthAccount"]

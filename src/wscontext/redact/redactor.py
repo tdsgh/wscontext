@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from collections.abc import Iterable
 
 from wscontext.config import Config
-from wscontext.redact.rules import BUILTIN_RULES, Rule, account_email_rule, account_rule
+from wscontext.redact.rules import BUILTIN_RULES, Rule, account_rule
 
 log = logging.getLogger(__name__)
 
@@ -43,13 +43,12 @@ def redact(text: str, extra_rules: Iterable[str] = (),
     """Return the text with every match replaced by `[REDACTED:<rule>]`, and one rule name per hit.
 
     `extra_rules` are regex strings added to the built-in rules. `account_digests` are
-    SHA-256 digests of account IDs and the account email; a UUID-shaped or email-shaped token
-    with one of them is masked.
+    SHA-256 digests of account IDs; a UUID-shaped token with one of them is masked.
     """
     hits: list[str] = []
     digests = frozenset(account_digests)
     for rule in (*BUILTIN_RULES, *compile_extra(extra_rules),
-                 *([account_rule(digests), account_email_rule(digests)] if digests else [])):
+                 *([account_rule(digests)] if digests else [])):
         def replace(m: re.Match[str], rule: Rule = rule) -> str:
             secret = m.group(rule.group)
             if rule.check is not None and not rule.check(secret):
