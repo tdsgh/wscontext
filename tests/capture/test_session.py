@@ -1,6 +1,9 @@
 from support import hook, transcript  # noqa: F401  (fixtures)
+import gc
 import json
 import subprocess
+import time
+import warnings
 
 from wscontext.history.branch import ls_blobs, read_tip
 from wscontext.store.records import read_session
@@ -442,3 +445,21 @@ def test_without_any_account_source_nothing_is_masked_and_hooks_succeed(hook, gi
     _fire_all(hook)
     raw = next(v for k, v in _store_texts(hook, git_repo).items() if "/raw/sessions/" in k)
     assert ACCT_ID.encode() in raw and b"account-id" not in raw
+
+
+def test_a_started_worker_leaves_no_process_handle_behind(tmp_path):
+    (tmp_path / "lingering.py").write_text(
+        "import pathlib, time\n"
+        "pathlib.Path('started').write_text('1')\n"
+        "while not pathlib.Path('stop').exists():\n"
+        "    time.sleep(0.05)\n")
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        worker.spawn_worker([], tmp_path, module="lingering")
+        deadline = time.monotonic() + 10
+        while not (tmp_path / "started").exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        gc.collect()  # the dropped Popen object is collected while the process still runs
+    (tmp_path / "stop").write_text("1")
+    assert (tmp_path / "started").exists()
+    assert [str(w.message) for w in caught if w.category is ResourceWarning] == []

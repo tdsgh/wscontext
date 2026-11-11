@@ -43,9 +43,11 @@ def detach_kwargs(platform: str) -> dict:
 
 
 def spawn_worker(args: list[str], cwd: Path, module: str = "wscontext.capture.worker") -> None:
-    subprocess.Popen([sys.executable, "-m", module, *args],
-                     cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                     stderr=subprocess.DEVNULL, **detach_kwargs(sys.platform))
+    proc = subprocess.Popen([sys.executable, "-m", module, *args],
+                            cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL, **detach_kwargs(sys.platform))
+    # Never waited for: without a status, collecting `proc` warns that the process still runs.
+    proc.returncode = 0
 
 
 def _raw_name(store: StorePaths, session_id: str, record: SessionRecord | None,
