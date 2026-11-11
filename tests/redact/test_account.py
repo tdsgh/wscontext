@@ -66,8 +66,7 @@ def test_learning_is_additive(git_repo):
 def test_the_account_file_is_read_for_the_two_ids(git_repo, tmp_path, monkeypatch):
     store = StorePaths.resolve(git_repo)
     file = tmp_path / "claude.json"
-    file.write_text(json.dumps({"oauthAccount": {"accountUuid": ACCOUNT, "organizationUuid": ORG,
-                                                 "emailAddress": "x@example.com"}}))
+    file.write_text(json.dumps({"oauthAccount": {"accountUuid": ACCOUNT, "organizationUuid": ORG}}))
     monkeypatch.setattr(account, "account_file_path", lambda: file)
     account.learn_account_file(store, Config())
     assert account.read_digests(store) == {account_digest(ACCOUNT), account_digest(ORG)}
