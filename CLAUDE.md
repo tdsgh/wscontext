@@ -64,6 +64,9 @@ it instead of restating them — `→ ADR-0NN` refers to
   it as a flake.
 - An agent runs its own layer's tests while working and the full suite once
   before reporting.
+- The suite fails on any warning (`filterwarnings = ["error"]`). A run that
+  adds a warning is red. Fix a warning at its source; a `filterwarnings` entry
+  is narrow and carries a comment naming the reason.
 
 ## Command index
 
@@ -78,6 +81,7 @@ it instead of restating them — `→ ADR-0NN` refers to
 | See the stages and how to run one | [docs/roadmap.md](docs/roadmap.md) |
 | Read the current stage's requirements | [docs/wscontext-phase-3.md](docs/wscontext-phase-3.md) |
 | Build the current stage | [docs/build-plan-wscontext-phase-3.md](docs/build-plan-wscontext-phase-3.md) via `/kit:run-build-plan` |
+| See the pre-Alpha work packages | [docs/build-plan-wscontext-pre-alpha.md](docs/build-plan-wscontext-pre-alpha.md) via `/kit:run-build-plan` |
 
 ## Execution guardrails
 

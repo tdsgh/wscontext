@@ -86,7 +86,7 @@ existing ones) and the CLAUDE.md block. The store is split (→ ADR-004):
   index/graph.db                                   code graph                     derived
   index/graph.lock                                 graph writer lock              host-local
   index/graph.worker                               claim: a graph worker is starting   host-local
-  state/    active.json, turns/<session>.json, materialized.json, pruned.json, last_fetch, last_sweep, locks/, rewrites/   host-local
+  state/    active.json, account_ids.json, turns/<session>.json, materialized.json, pruned.json, last_fetch, last_sweep, locks/, rewrites/   host-local
   logs/     hooks.jsonl, ctx-calls.jsonl (one rotated generation each, .1)                                                  host-local
 ```
 
@@ -221,6 +221,21 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
   (pyproject.toml:6-11; → ADR-042). They load only inside functions of
   `graph/parse.py` and the language modules.
 
+### Redaction
+
+Every write to the store or a log passes through the redactor
+(src/wscontext/redact/redactor.py:41-64). A hit becomes `[REDACTED:<rule>]`.
+Rules apply in this order:
+
+- **Built-in.** `private-key`, `aws-key`, `gcp-api-key`, `github-token`,
+  `gitlab-token`, `slack-token`, `jwt`, `bearer-token`, `env-secret`,
+  `high-entropy-assignment` (src/wscontext/redact/rules.py:45-64).
+- **Configured.** Each `[redaction] extra_patterns` regex becomes `custom-N`.
+  An invalid pattern is logged and skipped
+  (src/wscontext/redact/redactor.py:30-38).
+- **`account-id`.** A UUID-shaped token whose SHA-256 digest is a known account
+  digest. The digests are in `state/account_ids.json` (→ ADR-046).
+
 ## Data model
 
 Every record carries a schema version and the Git author who produced it.
@@ -254,7 +269,7 @@ Every record carries a schema version and the Git author who produced it.
 | Store | Resolves the store under the Git common dir; reads and writes records | `src/wscontext/store/` | 1 |
 | Hook handlers | One handler per Claude Code event; exit 0, bounded time (→ ADR-009) | `src/wscontext/capture/` | 1 |
 | Transcript adapter | Versioned parser of Claude Code transcripts (→ ADR-002) | `src/wscontext/adapters/` | 1 |
-| Redactor | Pattern rules applied before every write (→ ADR-006) | `src/wscontext/redact/` | 1 |
+| Redactor | Pattern rules applied before every write, including the operator's account IDs by digest (→ ADR-006, ADR-046) | `src/wscontext/redact/` | 1 |
 | History ref | Plumbing writer, union merge, fetch and push of `refs/wscontext/history` (→ ADR-007, ADR-008, ADR-031) | `src/wscontext/history/` | 1 |
 | Git hooks | Shims plus handlers for trailer, checkpoint, rewrite, push; chaining installer | `src/wscontext/githooks/` | 1 |
 | Stats | `ctx stats` views over records, logs and indexes, including stored volume, index, adoption, brief and the code graph (→ ADR-018, ADR-019) | `src/wscontext/stats/` | 1+ |
@@ -334,8 +349,14 @@ are in [roadmap.md](roadmap.md).
   timer (→ ADR-034).
 - If a prompt or tool call arrives while its session's final step runs, its
   counts can be lost. The final step deletes the turn state when it ends
-  (src/wscontext/capture/worker.py:160).
+  (src/wscontext/capture/worker.py:175).
+- Account-ID masking finds the account file at `~/.claude.json` only, and
+  matches hyphenated UUIDs only (src/wscontext/redact/account.py:20-21,
+  src/wscontext/redact/rules.py:18-20; → ADR-046).
 - Search matches words only, so paraphrases are missed. The index keeps the
   text each tool call was given, not the tool's name (→ ADR-045).
 - Background fetches and pushes cannot ask for a credential. Without a
   credential that works with no prompt, they fail, and `ctx doctor` warns.
+- The suite fails on any warning (pyproject.toml:33). A SQLite connection that
+  is freed only when an xdist worker shuts down is not reported; run with
+  `-n 0` to catch it.

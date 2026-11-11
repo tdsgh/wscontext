@@ -744,3 +744,34 @@ src/wscontext/adapters/claude_code.py:343).
 - The index schema version is 2 (src/wscontext/index/db.py:8), so every older
   index rebuilds itself on first use.
 - Search has no filter by tool.
+
+### ADR-046 — The operator's account identifiers are masked by digest
+
+**Decision.** A UUID-shaped token equal to the operator's account ID or
+organization ID becomes `[REDACTED:account-id]` wherever the redactor runs
+(src/wscontext/redact/rules.py:23-30). The store keeps only the SHA-256 digest
+of each value (src/wscontext/redact/account.py:24-25). The digests come from
+the `session-owner` lines of a transcript while it is copied
+(src/wscontext/capture/worker.py:73-76,
+src/wscontext/adapters/claude_code.py:228-239) and from `oauthAccount` in
+Claude Code's account file, `~/.claude.json`
+(src/wscontext/redact/account.py:54-62). This extends ADR-006.
+
+**Implications.**
+- The digests live in `state/account_ids.json`: host-local, never in history,
+  never in `.wscontext/config.toml` (src/wscontext/redact/account.py:24-25,
+  src/wscontext/redact/redactor.py:14-19).
+- No account ID is written in clear anywhere, including state and logs.
+- Only the capture worker reads the account file, at the start of each action
+  (src/wscontext/capture/worker.py:317). Hook handlers read the digest file
+  only (src/wscontext/capture/dispatch.py:73), so the hook path stays within
+  ADR-016 and ADR-009.
+- A function that loads config adds the digests with `with_account_ids`. A test
+  fails when one does not (tests/redact/test_account.py:110-127).
+- Identifiers of other people are not masked.
+- The account file is found at `~/.claude.json` only; `CLAUDE_CONFIG_DIR` is
+  not honoured (src/wscontext/redact/account.py:20-21). A UUID without hyphens
+  is not matched (src/wscontext/redact/rules.py:18-20).
+
+**Guardrail.** The IDs are not a `[redaction]` setting; the config file is
+committed.
