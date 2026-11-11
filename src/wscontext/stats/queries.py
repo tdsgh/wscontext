@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from wscontext.capture.kinds import tool_kind
+from wscontext.capture.kinds import ctx_invocations, tool_kind
 from wscontext.cli.data import parse_time, transcript_turns
 from wscontext.logs import CTX_CALLS_LOG
 from wscontext.stats.data import week_of, percentile, read_log
@@ -58,8 +58,9 @@ def join_calls(store: StorePaths, since: datetime | None) -> list[dict]:
     return calls
 
 
-def first_tool(store: StorePaths, rec: SessionRecord) -> str | None:
-    """The kind of the session's first search, read or `ctx` call; None without a readable transcript."""
+def first_call(store: StorePaths, rec: SessionRecord) -> tuple[str | None, str | None]:
+    """(kind, `ctx` subcommand) of the session's first search, read or `ctx` call; the subcommand
+    is set only for a `ctx` call. (None, None) without a readable transcript."""
     for turn in transcript_turns(store, rec):
         for item in turn.items:
             if item.kind != "tool_call" or item.name is None:
@@ -67,18 +68,28 @@ def first_tool(store: StorePaths, rec: SessionRecord) -> str | None:
             command = item.text.split("command=", 1)[1] if item.name == "Bash" \
                 and "command=" in item.text else None
             kind = tool_kind(item.name, command)
-            if kind in {"ctx", "search", "read"}:
-                return kind
-    return None
+            if kind == "ctx":
+                return kind, ctx_invocations(command)[0][0]
+            if kind in {"search", "read"}:
+                return kind, None
+    return None, None
+
+
+def first_tool(store: StorePaths, rec: SessionRecord) -> str | None:
+    """The kind of the session's first search, read or `ctx` call; None without a readable transcript."""
+    return first_call(store, rec)[0]
 
 
 def ctx_first(store: StorePaths, sessions: list[SessionRecord]) -> dict:
-    firsts = {r.session_id: first_tool(store, r) for r in sessions}
-    considered = [k for k in firsts.values() if k is not None]
+    firsts = {r.session_id: first_call(store, r) for r in sessions}
+    considered = [k for k, _ in firsts.values() if k is not None]
     first = sum(k == "ctx" for k in considered)
+    graph_first = sum(sub in {"code", "impact"} for _, sub in firsts.values())
     return {"sessions_considered": len(considered), "ctx_first": first,
             "ctx_first_share": first / len(considered) if considered else None,
-            "first_tool": firsts}
+            "graph_first": graph_first,
+            "graph_first_share": graph_first / len(considered) if considered else None,
+            "first_tool": {sid: k for sid, (k, _) in firsts.items()}}
 
 
 def adoption(sessions: list[SessionRecord]) -> dict:
@@ -92,7 +103,11 @@ def adoption(sessions: list[SessionRecord]) -> dict:
         if week := week_of(rec.started_at):
             weeks.setdefault(week, []).append(rec)
     total = row(sessions)
-    return {**total, "with_ctx_share": total["with_ctx"] / len(sessions) if sessions else None,
+    graph = {"with_code": sum(bool(r.ctx_calls.get("code")) for r in sessions),
+             "with_impact": sum(bool(r.ctx_calls.get("impact")) for r in sessions),
+             "with_why_name": sum(bool(r.ctx_calls.get("why#name")) for r in sessions)}
+    return {**total, **graph,
+            **{f"{k}_share": v / len(sessions) if sessions else None for k, v in graph.items()}, "with_ctx_share": total["with_ctx"] / len(sessions) if sessions else None,
             "with_find_share": total["with_find"] / len(sessions) if sessions else None,
             "by_week": [{"week": w, **row(weeks[w])} for w in sorted(weeks)]}
 
@@ -113,4 +128,5 @@ def summarize(calls: list[dict], first: dict, adopted: dict) -> dict:
             "output_bytes_total": sum(sizes), "results_total": sum(counts), "flags": flags,
             "sessions_considered": first["sessions_considered"],
             "ctx_first": first["ctx_first"], "ctx_first_share": first["ctx_first_share"],
+            "graph_first": first["graph_first"], "graph_first_share": first["graph_first_share"],
             "adoption": adopted}

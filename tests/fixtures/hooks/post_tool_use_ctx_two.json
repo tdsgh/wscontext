@@ -1,0 +1,1 @@
+{"session_id":"sess-cap1","transcript_path":"{transcript}","cwd":"{cwd}","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"ctx why --limit 1 src/a.py#C.m && ctx why src/a.py:3"},"tool_response":{"stdout":"answer text"}}

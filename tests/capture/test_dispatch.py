@@ -6,7 +6,7 @@ import sys
 import time
 
 from wscontext.capture import dispatch, handlers
-from wscontext.capture.kinds import ctx_invocations, tool_kind
+from wscontext.capture.kinds import ctx_call_key, ctx_invocations, tool_kind
 from wscontext.capture.worker import detach_kwargs
 
 
@@ -111,3 +111,21 @@ def test_real_subprocess_hook_spawns_detached_worker(git_repo, transcript, tmp_p
         time.sleep(0.1)
     else:
         raise AssertionError("worker did not finish")
+
+
+def test_why_on_a_name_counts_under_its_own_key():
+    def key(command):
+        return [ctx_call_key(sub, argv) for sub, argv in ctx_invocations(command)]
+
+    assert key("ctx why #name") == ["why#name"]
+    assert key("ctx why src/a.py#name") == ["why#name"]
+    assert key("ctx why src/a.py#Class.method") == ["why#name"]
+    assert key("ctx why src/a.py:10") == ["why"]
+    assert key("ctx why src/a.py:3-9") == ["why"]
+    assert key("ctx why --limit 1 #name") == ["why#name"]
+    assert key("ctx why --limit 1 src/a.py:10") == ["why"]
+    assert key("ctx why --full --json src/a.py#m") == ["why#name"]
+    assert key("ctx why #name --limit 1") == ["why#name"]
+    assert key("ctx why") == ["why"]
+    assert key("ctx find #tag") == ["find"]
+    assert key("ctx why #a && ctx why b.py:1") == ["why#name", "why"]

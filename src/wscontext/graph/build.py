@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 from wscontext.config import Config
-from wscontext.gitutil import git_bytes
+from wscontext.gitutil import GitError, git_bytes
 from wscontext.graph import db, history, parse
 from wscontext.graph.languages import REGISTRY, load_parts
 from wscontext.graph.languages.base import FileFacts, Import, LanguagePart, RepoFiles
@@ -78,6 +78,56 @@ def _listed(store: StorePaths, exclude: Sequence[str]) -> list[str]:
 
 def _extension(path: str) -> str:
     return PurePosixPath(path).suffix.lower()
+
+
+def _select(store: StorePaths, config: Config, parts: list[LanguagePart]
+            ) -> tuple[list[str], dict[str, LanguagePart]]:
+    """The listed paths and, among them, the files of a switched-on language with their part."""
+    by_ext = {ext: p for p in parts for ext in p.extensions}
+    listed = _listed(store, config.graph.exclude)
+    return listed, {p: by_ext[_extension(p)] for p in listed if _extension(p) in by_ext}
+
+
+def _compare(store: StorePaths, wanted: dict[str, LanguagePart], rows: dict[str, tuple]
+             ) -> tuple[list[str], list[tuple[str, LanguagePart, os.stat_result]]]:
+    """Stat every wanted file against its row, reading no content. Returns the stored paths to
+    drop and the files to read again: new, or with another size, mtime or language part."""
+    gone = [p for p, r in rows.items() if p not in wanted or wanted[p].name != r[0]]
+    todo: list[tuple[str, LanguagePart, os.stat_result]] = []
+    for path, part in wanted.items():
+        try:
+            st = os.stat(store.root.joinpath(*path.split("/")))
+        except OSError:
+            st = None
+        if st is None or not stat.S_ISREG(st.st_mode):
+            if path in rows:
+                gone.append(path)
+            continue
+        row = rows.get(path)
+        if row and row[:4] == (part.name, part.version, st.st_size, st.st_mtime_ns):
+            continue
+        todo.append((path, part, st))
+    return gone, todo
+
+
+def changed_files(store: StorePaths, config: Config) -> int | None:
+    """How many files the next refresh would read or drop, by stat alone: no lock, no write, no
+    parse. None when there is no usable graph or Git fails."""
+    try:
+        conn = db.connect(store, readonly=True)
+    except db.GraphUnavailable:
+        return None
+    try:
+        parts, _ = load_parts(config.graph.languages)
+        _, wanted = _select(store, config, parts)
+        rows = {r[0]: r[1:] for r in conn.execute(
+            "SELECT path, language, lang_version, size, mtime_ns, digest FROM files")}
+    except (GitError, OSError, sqlite3.DatabaseError):
+        return None
+    finally:
+        conn.close()
+    gone, todo = _compare(store, wanted, rows)
+    return len(gone) + len(todo)
 
 
 def _owner(found: list[tuple[int, int, int]], line: int) -> int | None:
@@ -193,10 +243,8 @@ def _walk(store: StorePaths, config: Config, parts: list[LanguagePart],
     started_ns = time.time_ns()
     deadline = None if budget_ms is None else started + budget_ms / 1000
     by_name = {p.name: p for p in parts}
-    by_ext = {ext: p for p in parts for ext in p.extensions}
-    listed = _listed(store, config.graph.exclude)
+    listed, wanted = _select(store, config, parts)
     files = RepoFiles(listed)
-    wanted = {p: by_ext[_extension(p)] for p in listed if _extension(p) in by_ext}
     listed_digest = hashlib.sha256("\0".join(listed).encode("utf-8")).hexdigest()
 
     conn = db.connect(store)
@@ -204,21 +252,7 @@ def _walk(store: StorePaths, config: Config, parts: list[LanguagePart],
         rows = {r[0]: r[1:] for r in conn.execute(
             "SELECT path, language, lang_version, size, mtime_ns, digest FROM files")}
         was_empty = not rows
-        gone = [p for p, r in rows.items() if p not in wanted or wanted[p].name != r[0]]
-        todo: list[tuple[str, LanguagePart, os.stat_result]] = []
-        for path, part in wanted.items():
-            try:
-                st = os.stat(store.root.joinpath(*path.split("/")))
-            except OSError:
-                st = None
-            if st is None or not stat.S_ISREG(st.st_mode):
-                if path in rows:
-                    gone.append(path)
-                continue
-            row = rows.get(path)
-            if row and row[:4] == (part.name, part.version, st.st_size, st.st_mtime_ns):
-                continue
-            todo.append((path, part, st))
+        gone, todo = _compare(store, wanted, rows)
 
         changed = bool(gone)
         conn.execute("BEGIN IMMEDIATE")

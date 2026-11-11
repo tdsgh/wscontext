@@ -352,3 +352,12 @@ def test_a_local_copy_that_differs_from_the_branch_is_not_pruned(hook):
     age(store, "sess-cap1", 200)
     worker.run("sweep", "", "", str(store.root))
     assert raw.exists()
+
+
+def test_two_ctx_calls_in_one_command_count_once_each(hook):
+    hook("SessionStart", "session_start")
+    hook("PostToolUse", "post_tool_use_ctx_two")
+    hook("SessionEnd", "session_end")
+    rec = read_session(hook.store, "sess-cap1")
+    assert rec.ctx_calls == {"why#name": 1, "why": 1}
+    assert rec.tool_calls == {"ctx": 1}

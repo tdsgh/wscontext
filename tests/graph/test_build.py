@@ -1,5 +1,7 @@
+import os
 import sqlite3
 import threading
+import time
 
 import pytest
 
@@ -7,7 +9,7 @@ from conftest import run_git
 from graph_support import (ToyPart, config, register, snapshot, store, table, toy,  # noqa: F401
                            unknown_language, write)
 from wscontext.graph import db
-from wscontext.graph.build import MAX_FILE_BYTES, rebuild, refresh
+from wscontext.graph.build import MAX_FILE_BYTES, changed_files, rebuild, refresh
 from wscontext.graph.languages import load_parts
 from wscontext.graph.languages.base import LanguageUnavailable
 from wscontext.store.locks import FileLock
@@ -302,3 +304,57 @@ def test_summary_counts_by_language_and_status(store, toy):
     assert s["by_status"] == {"ok": 2, "error": 1, "skipped": 0}
     assert s["last_build"]["parsed"] == 3 and s["last_refresh"]["parsed"] == 3
     assert s["bytes"] > 0
+
+
+def age(store, *paths):
+    """Move mtimes out of the racy window, so a refresh stores them and a stat can match."""
+    old = time.time() - 3600
+    for path in paths:
+        os.utime(store.root / path, (old, old))
+
+
+def test_changed_files_counts_what_the_next_refresh_reads(store):
+    cfg = config(exclude=("vendor",))
+    assert changed_files(store, cfg) is None  # no graph yet
+    write(store, "a.py", "def f():\n    pass\n")
+    write(store, "b.py", "def g():\n    pass\n")
+    write(store, "c.py", "def h():\n    pass\n")
+    age(store, "a.py", "b.py", "c.py")
+    refresh(store, cfg)
+    assert changed_files(store, cfg) == 0
+
+    write(store, "a.py", "def f():\n    return 1\n")
+    write(store, "new.py", "def n():\n    pass\n")
+    write(store, "vendor/x.py", "def x():\n    pass\n")
+    (store.root / "c.py").unlink()
+    before = snapshot(store)
+    mtimes = table(store, "SELECT path, mtime_ns FROM files ORDER BY path")
+    assert changed_files(store, cfg) == 3  # edited, new, deleted; vendor/ is excluded
+    assert snapshot(store) == before
+    assert table(store, "SELECT path, mtime_ns FROM files ORDER BY path") == mtimes
+    assert not db.lock_path(store).exists()
+
+    age(store, "a.py", "new.py")
+    refreshed = refresh(store, cfg)
+    assert refreshed.parsed == 2
+    assert changed_files(store, cfg) == 0
+
+
+def test_changed_files_agrees_with_a_refresh_on_a_part_version_change(store, toy):
+    cfg = config("python", "toy")
+    write(store, "a.py", "def f():\n    pass\n")
+    write(store, "t.toy", "def t():\n    pass\n")
+    age(store, "a.py", "t.toy")
+    refresh(store, cfg)
+    assert changed_files(store, cfg) == 0
+    toy.version += 1
+    assert changed_files(store, cfg) == 1
+    assert refresh(store, cfg).parsed == 1
+    assert changed_files(store, cfg) == 0
+
+
+def test_changed_files_counts_a_racy_row_until_its_mtime_ages(store):
+    write(store, "a.py", "def f():\n    pass\n")
+    refresh(store, config())  # just written: stored with mtime 0
+    assert changed_files(store, config()) == 1
+    assert refresh(store, config()).parsed == 0  # same digest: nothing parsed, mtime kept at 0

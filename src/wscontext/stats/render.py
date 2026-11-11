@@ -152,6 +152,12 @@ def queries_blocks(q: dict, calls: list[dict], shown: int) -> list[Block]:
     a = q["adoption"]
     body += [f"sessions that called ctx: {a['with_ctx']} of {a['sessions']} ({share(a['with_ctx_share'])}); "
              f"called ctx find: {a['with_find']} ({share(a['with_find_share'])})"]
+    body += [f"sessions with ctx code: {a['with_code']} ({share(a['with_code_share'])}); "
+             f"with ctx impact: {a['with_impact']} ({share(a['with_impact_share'])}); "
+             f"with ctx why on a name: {a['with_why_name']} ({share(a['with_why_name_share'])})",
+             f"ctx code or ctx impact before any other search, read or ctx call: "
+             f"{q['graph_first']} of {q['sessions_considered']} sessions "
+             f"({share(q['graph_first_share'])})"]
     weekly = [[w["week"], w["sessions"], w["with_ctx"], w["with_find"]] for w in a["by_week"]]
     if weekly:
         body += table(["week", "sessions", "ctx", "find"], weekly)

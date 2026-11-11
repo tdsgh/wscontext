@@ -1,7 +1,7 @@
 """`ctx stats [data|turns|queries|hooks|session <id>] [--since <date|duration>]`: terminal report."""
 
 from wscontext.cli.data import find_session, parse_since
-from wscontext.cli.output import Block, Reply, error, render
+from wscontext.cli.output import Reply, error, render
 from wscontext.config import Config
 from wscontext.stats import data, hooks, queries, render as views, turns
 from wscontext.store.paths import StorePaths
@@ -27,7 +27,8 @@ def run(args, store: StorePaths, config: Config) -> Reply:
     command = f"ctx stats {args.view}"
     meta = {"view": args.view, "since": since.isoformat() if since else None}
     if args.view == "code":
-        blocks = [Block("stats", "code", "available from stage 3")]
+        from wscontext.stats import code  # loads the graph package, so only this view
+        blocks = code.render(code.collect(store, config))
     elif args.view == "data":
         blocks = views.data_blocks(data.collect(store, config, since))
     elif args.view == "turns":

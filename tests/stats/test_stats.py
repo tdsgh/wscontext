@@ -206,7 +206,7 @@ def test_session_view_and_errors(world, capsys):
 
 def test_code_view(world, capsys):
     _, out, _ = world.ctx(capsys, "stats", "code")
-    assert "available from stage 3" in out
+    assert "no graph yet" in out and "available from stage 3" not in out
 
 
 def test_stats_writes_nothing_but_its_call_log(world, capsys):

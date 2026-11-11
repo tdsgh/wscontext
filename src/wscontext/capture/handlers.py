@@ -4,7 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from wscontext.capture import brief, worker
-from wscontext.capture.kinds import ctx_invocations, tool_kind
+from wscontext.capture.kinds import ctx_call_key, ctx_invocations, tool_kind
 from wscontext.capture.state import (active_path, git_author, git_value,
                                      read_json, sweep_due, turn_state_path, update_json,
                                      worktree_key)
@@ -91,9 +91,10 @@ def post_tool_use(store: StorePaths, config: Config, payload: dict) -> None:
     def count(d: dict) -> None:
         tools = d.setdefault("tool_calls", {})
         tools[kind] = tools.get(kind, 0) + 1
-        for sub, _ in calls:
+        for sub, argv in calls:
             ctx = d.setdefault("ctx_calls", {})
-            ctx[sub] = ctx.get(sub, 0) + 1
+            key = ctx_call_key(sub, argv)
+            ctx[key] = ctx.get(key, 0) + 1
         if isinstance(edited, str):
             try:
                 rel = Path(edited).resolve().relative_to(store.root.resolve()).as_posix()
