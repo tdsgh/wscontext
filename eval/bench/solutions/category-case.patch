@@ -1,0 +1,57 @@
+diff --git a/tally/cli.py b/tally/cli.py
+index 66f838d..794e11f 100644
+--- a/tally/cli.py
++++ b/tally/cli.py
+@@ -216,7 +216,7 @@ def cmd_list(opts, args):
+ 
+ 
+ def clean_category_option(value):
+-    value = value.strip()
++    value = value.strip().lower()
+     if not value:
+         raise ValueError("category must not be empty")
+     return value
+diff --git a/tally/validate.py b/tally/validate.py
+index 77a5268..a0b7b2f 100644
+--- a/tally/validate.py
++++ b/tally/validate.py
+@@ -7,12 +7,13 @@ _CATEGORY_RE = re.compile(r"[a-z0-9-]+")
+ 
+ 
+ def validate_category(text):
+-    """Return the category name text with surrounding whitespace removed.
++    """Return the category name text lowercased, with surrounding
++    whitespace removed, so Food and food are the same category.
+ 
+     A category is 1 to CATEGORY_MAX_LENGTH characters of lowercase
+     letters, digits and dashes; anything else raises ValueError with
+     the same message for every command."""
+-    category = text.strip()
++    category = text.strip().lower()
+     if (not _CATEGORY_RE.fullmatch(category)
+             or len(category) > CATEGORY_MAX_LENGTH):
+         raise ValueError(
+diff --git a/tests/test_category.py b/tests/test_category.py
+index dbfb75b..2844d7c 100644
+--- a/tests/test_category.py
++++ b/tests/test_category.py
+@@ -16,7 +16,7 @@ COMMANDS = {
+     "recur add": lambda c: ["recur", "add", "1", c, "--every", "monthly"],
+ }
+ 
+-BAD = ["", "  ", "Food", "eating out", "café", "food_drinks", "a" * 25]
++BAD = ["", "  ", "eating out", "café", "food_drinks", "a" * 25]
+ GOOD = ["food", "car-2", "a" * 24]
+ 
+ 
+@@ -26,6 +26,10 @@ class ValidateCategoryTest(unittest.TestCase):
+             self.assertEqual(validate_category(name), name)
+         self.assertEqual(validate_category("  food "), "food")
+ 
++    def test_case_is_ignored(self):
++        self.assertEqual(validate_category("Food"), "food")
++        self.assertEqual(validate_category("CAR-2"), "car-2")
++
+     def test_rejects_invalid_names(self):
+         for name in BAD:
+             with self.assertRaises(ValueError):

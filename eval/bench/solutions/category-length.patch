@@ -1,0 +1,28 @@
+diff --git a/tally/validate.py b/tally/validate.py
+index 77a5268..6b20e17 100644
+--- a/tally/validate.py
++++ b/tally/validate.py
+@@ -2,7 +2,7 @@
+ 
+ import re
+ 
+-CATEGORY_MAX_LENGTH = 24
++CATEGORY_MAX_LENGTH = 32
+ _CATEGORY_RE = re.compile(r"[a-z0-9-]+")
+ 
+ 
+diff --git a/tests/test_category.py b/tests/test_category.py
+index dbfb75b..136717f 100644
+--- a/tests/test_category.py
++++ b/tests/test_category.py
+@@ -16,8 +16,8 @@ COMMANDS = {
+     "recur add": lambda c: ["recur", "add", "1", c, "--every", "monthly"],
+ }
+ 
+-BAD = ["", "  ", "Food", "eating out", "café", "food_drinks", "a" * 25]
+-GOOD = ["food", "car-2", "a" * 24]
++BAD = ["", "  ", "Food", "eating out", "café", "food_drinks", "a" * 33]
++GOOD = ["food", "car-2", "a" * 32]
+ 
+ 
+ class ValidateCategoryTest(unittest.TestCase):

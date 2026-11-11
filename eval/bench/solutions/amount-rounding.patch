@@ -1,0 +1,71 @@
+diff --git a/README.md b/README.md
+index 25a895c..0775ba0 100644
+--- a/README.md
++++ b/README.md
+@@ -10,8 +10,8 @@ python3 -m tally <command> [args]
+ 
+ Data lives in the current directory: entries in `ledger.json`, monthly
+ limits in `budgets.json`, recurring rules in `recurring.json`. Amounts are
+-positive numbers with at most two decimal places. Category names are
+-lowercase letters, digits and dashes.
++positive numbers; more decimal places than two are rounded to the nearest
++cent, halves up. Category names are lowercase letters, digits and dashes.
+ 
+ `python3 -m tally help` (or `-h`, `--help`) prints the usage summary. Errors
+ are printed as `tally: <message>`; usage errors exit with code 2, other
+diff --git a/tally/money.py b/tally/money.py
+index 586da54..66bac13 100644
+--- a/tally/money.py
++++ b/tally/money.py
+@@ -1,25 +1,25 @@
+ """Amount parsing and formatting. Amounts are stored as integer cents."""
+ 
+ import os
+-from decimal import Decimal, InvalidOperation
++from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+ 
+ # Currency symbol printed before amounts; read once at import time.
+ CURRENCY = os.environ.get("TALLY_CURRENCY", "$")
+ 
+ 
+ def parse_amount(text):
+-    """Convert a decimal amount string like '12.5' into integer cents."""
++    """Convert a decimal amount string like '12.5' into integer cents,
++    rounding to the nearest cent with halves rounded up. Decimal keeps it
++    exact: 19.99 is 1999 cents and 1.005 is 101, where float gives 100."""
+     try:
+         value = Decimal(text)
+     except InvalidOperation:
+         raise ValueError(f"invalid amount: {text!r}")
+     if not value.is_finite():
+         raise ValueError(f"invalid amount: {text!r}")
+-    if value <= 0:
++    cents = (value * 100).to_integral_value(rounding=ROUND_HALF_UP)
++    if cents <= 0:
+         raise ValueError(f"amount must be positive: {text!r}")
+-    cents = value * 100
+-    if cents != cents.to_integral_value():
+-        raise ValueError(f"amount has more than two decimal places: {text!r}")
+     return int(cents)
+ 
+ 
+diff --git a/tests/test_amount.py b/tests/test_amount.py
+index 91806b7..123b590 100644
+--- a/tests/test_amount.py
++++ b/tests/test_amount.py
+@@ -17,6 +17,15 @@ class ParseAmountTest(unittest.TestCase):
+     def test_whole_number(self):
+         self.assertEqual(parse_amount("5"), 500)
+ 
++    def test_rounds_half_up_to_the_cent(self):
++        self.assertEqual(parse_amount("19.999"), 2000)
++        self.assertEqual(parse_amount("1.005"), 101)
++        self.assertEqual(parse_amount("1.004"), 100)
++
++    def test_rounding_to_zero_is_rejected(self):
++        with self.assertRaises(ValueError):
++            parse_amount("0.004")
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

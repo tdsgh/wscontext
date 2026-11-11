@@ -1,0 +1,8 @@
+diff --git a/SQLITE_TIMINGS.txt b/SQLITE_TIMINGS.txt
+new file mode 100644
+index 0000000..1669546
+--- /dev/null
++++ b/SQLITE_TIMINGS.txt
+@@ -0,0 +1,2 @@
++44.55
++3.62

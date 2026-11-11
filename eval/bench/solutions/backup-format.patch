@@ -1,0 +1,163 @@
+diff --git a/tally/cli.py b/tally/cli.py
+index 66f838d..2f6b69a 100644
+--- a/tally/cli.py
++++ b/tally/cli.py
+@@ -4,6 +4,7 @@ import argparse
+ import csv
+ import datetime
+ import decimal
++import json
+ import os
+ import re
+ import sys
+@@ -11,7 +12,7 @@ import sys
+ from tally import money
+ from tally.money import format_cents, parse_amount
+ from tally.store import (load_budgets, load_ledger, load_recurring,
+-                         save_budgets, save_ledger, save_recurring)
++                         save_budgets, save_json, save_ledger, save_recurring)
+ from tally.validate import validate_category
+ 
+ USAGE = """usage: tally.py <command> [args]
+@@ -37,6 +38,10 @@ commands:
+                         scaled to the largest total; --since keeps only
+                         entries on or after that date
+   undo                  remove the most recent entry and print it
++  backup --output FILE  write the ledger, budgets and recurring entries to
++                        one JSON file
++  restore FILE          replace the ledger, budgets and recurring entries
++                        with those in a backup file
+   completion bash       print a bash completion script for tally; load it
+                         with `eval "$(tally.py completion bash)"`
+ """
+@@ -536,6 +541,33 @@ def cmd_undo(opts, args):
+     return 0
+ 
+ 
++def cmd_backup(opts, args):
++    """Write ledger, budgets and recurring rules into one JSON file: plain
++    text a person can read and diff, and safe to load (see DECISIONS.md)."""
++    if args:
++        raise UsageError(f"backup: unexpected argument: {args[0]!r}")
++    if not opts.output:
++        raise ValueError("backup requires --output FILE")
++    save_json({"ledger": load_ledger(), "budgets": load_budgets(),
++               "recurring": load_recurring()}, opts.output)
++    print(f"backed up to {opts.output}")
++
++
++def cmd_restore(opts, args):
++    if len(args) != 1:
++        raise ValueError("restore takes exactly one argument: FILE")
++    with open(args[0], encoding="utf-8") as f:
++        data = json.load(f)
++    if not (isinstance(data, dict) and isinstance(data.get("ledger"), list)
++            and isinstance(data.get("budgets"), dict)
++            and isinstance(data.get("recurring"), list)):
++        raise ValueError(f"restore: {args[0]} is not a tally backup")
++    save_ledger(data["ledger"])
++    save_budgets(data["budgets"])
++    save_recurring(data["recurring"])
++    print(f"restored {len(data['ledger'])} entries from {args[0]}")
++
++
+ def completion_bash(opts, args):
+     if args:
+         raise UsageError(f"completion bash: unexpected argument: {args[0]!r}")
+@@ -569,6 +601,8 @@ COMMANDS = {
+     "recur": {"add": recur_add, "apply": recur_apply},
+     "report": {"monthly": report_monthly},
+     "undo": cmd_undo,
++    "backup": cmd_backup,
++    "restore": cmd_restore,
+     "completion": {"bash": completion_bash},
+ }
+ 
+@@ -589,6 +623,8 @@ def add_options(parser, path):
+     elif path == ("export",):
+         parser.add_argument("--format", action=OnceAction)
+         parser.add_argument("--output", action=OnceAction)
++    elif path == ("backup",):
++        parser.add_argument("--output", action=OnceAction)
+     elif path == ("recur", "add"):
+         parser.add_argument("--every", action=OnceAction)
+     elif path == ("report", "monthly"):
+@@ -655,7 +691,7 @@ OPTION_VALUES = {
+ }
+ # Options whose value, and commands whose arguments, are file names.
+ FILE_OPTIONS = ("--output",)
+-FILE_COMMANDS = (("import",),)
++FILE_COMMANDS = (("import",), ("restore",))
+ 
+ 
+ def command_paths():
+diff --git a/tests/test_backup.py b/tests/test_backup.py
+new file mode 100644
+index 0000000..3a9c774
+--- /dev/null
++++ b/tests/test_backup.py
+@@ -0,0 +1,50 @@
++import contextlib
++import io
++import json
++import os
++import sys
++import tempfile
++import unittest
++
++sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++
++import tally  # noqa: E402
++
++
++class BackupTest(unittest.TestCase):
++    def setUp(self):
++        self.old_cwd = os.getcwd()
++        self.tmp = tempfile.TemporaryDirectory()
++        os.chdir(self.tmp.name)
++
++    def tearDown(self):
++        os.chdir(self.old_cwd)
++        self.tmp.cleanup()
++
++    def run_cli(self, *args):
++        out = io.StringIO()
++        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
++            code = tally.main(["tally.py", *args])
++        return code, out.getvalue()
++
++    def test_round_trip(self):
++        tally.save_ledger([{"amount": 1, "category": "food", "date": "2026-11-01"}])
++        tally.save_budgets({"food": 100})
++        tally.save_recurring([])
++        self.assertEqual(self.run_cli("backup", "--output", "b.json")[0], 0)
++        with open("b.json", encoding="utf-8") as f:
++            self.assertEqual(json.load(f)["budgets"], {"food": 100})
++        for name in ("ledger.json", "budgets.json", "recurring.json"):
++            os.remove(name)
++        self.assertEqual(self.run_cli("restore", "b.json")[0], 0)
++        self.assertEqual(tally.load_ledger()[0]["amount"], 1)
++        self.assertEqual(tally.load_budgets(), {"food": 100})
++
++    def test_restore_rejects_other_files(self):
++        with open("x.json", "w", encoding="utf-8") as f:
++            f.write("[]")
++        self.assertEqual(self.run_cli("restore", "x.json")[0], 1)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/tests/test_completion.py b/tests/test_completion.py
+index 38c681d..a635e48 100644
+--- a/tests/test_completion.py
++++ b/tests/test_completion.py
+@@ -65,7 +65,8 @@ class BashCompletionTest(unittest.TestCase):
+         return sorted(w for w in result.stdout.split("\n") if w)
+ 
+     def test_commands(self):
+-        self.assertEqual(self.complete("tally", "re"), ["recur", "report"])
++        self.assertEqual(self.complete("tally", "re"),
++                         ["recur", "report", "restore"])
+         self.assertIn("completion", self.complete("tally", ""))
+ 
+     def test_subcommands(self):

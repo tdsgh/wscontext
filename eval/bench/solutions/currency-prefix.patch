@@ -1,0 +1,85 @@
+diff --git a/tally/cli.py b/tally/cli.py
+index 66f838d..6e139a8 100644
+--- a/tally/cli.py
++++ b/tally/cli.py
+@@ -9,7 +9,7 @@ import re
+ import sys
+ 
+ from tally import money
+-from tally.money import format_cents, parse_amount
++from tally.money import format_cents, parse_amount, parse_typed_amount
+ from tally.store import (load_budgets, load_ledger, load_recurring,
+                          save_budgets, save_ledger, save_recurring)
+ from tally.validate import validate_category
+@@ -157,7 +157,7 @@ def cmd_add(opts, args):
+     if len(args) != 2:
+         raise ValueError("add takes exactly two arguments: AMOUNT CATEGORY")
+     amount_text, category = args
+-    cents = parse_amount(amount_text)
++    cents = parse_typed_amount(amount_text)
+     category = validate_category(category)
+     entry = {
+         "amount": cents,
+@@ -238,7 +238,7 @@ def budget_set(opts, args):
+                          "CATEGORY AMOUNT")
+     category, amount_text = args
+     category = validate_category(category)
+-    cents = parse_amount(amount_text)
++    cents = parse_typed_amount(amount_text)
+     budgets = load_budgets()
+     budgets[category] = cents
+     save_budgets(budgets)
+@@ -422,7 +422,7 @@ def recur_add(opts, positional):
+         raise ValueError(f"recur add: unsupported period: {every!r} "
+                          f"(supported: {', '.join(RECUR_PERIODS)})")
+     amount_text, category = positional
+-    cents = parse_amount(amount_text)
++    cents = parse_typed_amount(amount_text)
+     category = validate_category(category)
+     rules = load_recurring()
+     rules.append({
+diff --git a/tally/money.py b/tally/money.py
+index 586da54..f664f99 100644
+--- a/tally/money.py
++++ b/tally/money.py
+@@ -23,6 +23,11 @@ def parse_amount(text):
+     return int(cents)
+ 
+ 
++def parse_typed_amount(text):
++    """Like parse_amount, but allow one leading dollar sign, as people type it."""
++    return parse_amount(text[1:] if text.startswith("$") else text)
++
++
+ def format_cents(cents):
+     sign = "-" if cents < 0 else ""
+     cents = abs(cents)
+diff --git a/tests/test_dollar_sign.py b/tests/test_dollar_sign.py
+new file mode 100644
+index 0000000..5565e9a
+--- /dev/null
++++ b/tests/test_dollar_sign.py
+@@ -0,0 +1,23 @@
++import os
++import sys
++import unittest
++
++sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++
++from tally.money import parse_typed_amount  # noqa: E402
++
++
++class DollarSignTest(unittest.TestCase):
++    def test_leading_dollar_sign(self):
++        self.assertEqual(parse_typed_amount("$12.50"), 1250)
++
++    def test_plain_number(self):
++        self.assertEqual(parse_typed_amount("12.50"), 1250)
++
++    def test_sign_elsewhere_is_rejected(self):
++        with self.assertRaises(ValueError):
++            parse_typed_amount("12.50$")
++
++
++if __name__ == "__main__":
++    unittest.main()

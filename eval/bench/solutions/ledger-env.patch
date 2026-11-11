@@ -1,0 +1,73 @@
+diff --git a/tally/store.py b/tally/store.py
+index 660a133..b15fd95 100644
+--- a/tally/store.py
++++ b/tally/store.py
+@@ -23,7 +23,13 @@ def save_recurring(rules, path=RECURRING):
+     save_json(rules, path)
+ 
+ 
+-def load_ledger(path=LEDGER):
++def ledger_path():
++    """The ledger file: $TALLY_LEDGER when set, else ledger.json here."""
++    return os.environ.get("TALLY_LEDGER") or LEDGER
++
++
++def load_ledger(path=None):
++    path = path or ledger_path()
+     if not os.path.exists(path):
+         return []
+     with open(path, encoding="utf-8") as f:
+@@ -41,8 +47,8 @@ def save_json(data, path):
+     os.replace(tmp, path)
+ 
+ 
+-def save_ledger(entries, path=LEDGER):
+-    save_json(entries, path)
++def save_ledger(entries, path=None):
++    save_json(entries, path or ledger_path())
+ 
+ 
+ def load_budgets(path=BUDGETS):
+diff --git a/tests/test_ledger_env.py b/tests/test_ledger_env.py
+new file mode 100644
+index 0000000..2663ee3
+--- /dev/null
++++ b/tests/test_ledger_env.py
+@@ -0,0 +1,37 @@
++import os
++import sys
++import tempfile
++import unittest
++from unittest import mock
++
++sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++
++import tally  # noqa: E402
++
++
++class LedgerEnvTest(unittest.TestCase):
++    def setUp(self):
++        self.old_cwd = os.getcwd()
++        self.tmp = tempfile.TemporaryDirectory()
++        os.chdir(self.tmp.name)
++
++    def tearDown(self):
++        os.chdir(self.old_cwd)
++        self.tmp.cleanup()
++
++    def test_ledger_follows_the_variable(self):
++        with mock.patch.dict(os.environ, {"TALLY_LEDGER": "other.json"}):
++            tally.save_ledger([{"amount": 1, "category": "food", "date": "2026-11-01"}])
++            self.assertEqual(len(tally.load_ledger()), 1)
++        self.assertTrue(os.path.exists("other.json"))
++        self.assertFalse(os.path.exists("ledger.json"))
++
++    def test_default_is_ledger_json(self):
++        with mock.patch.dict(os.environ, {}, clear=False):
++            os.environ.pop("TALLY_LEDGER", None)
++            tally.save_ledger([])
++        self.assertTrue(os.path.exists("ledger.json"))
++
++
++if __name__ == "__main__":
++    unittest.main()

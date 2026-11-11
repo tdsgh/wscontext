@@ -1,0 +1,46 @@
+diff --git a/tally/cli.py b/tally/cli.py
+index 66f838d..79049e4 100644
+--- a/tally/cli.py
++++ b/tally/cli.py
+@@ -459,7 +459,7 @@ def recur_apply(opts, args):
+           f"{'entry' if posted == 1 else 'entries'}")
+ 
+ 
+-BAR_WIDTH = 40
++BAR_WIDTH = 30
+ 
+ 
+ def bar(cents, largest, width=BAR_WIDTH):
+diff --git a/tests/test_report.py b/tests/test_report.py
+index 62f7ba3..9c954fb 100644
+--- a/tests/test_report.py
++++ b/tests/test_report.py
+@@ -43,12 +43,12 @@ class ReportMonthlyTest(unittest.TestCase):
+         self.assertEqual(code, 0)
+         self.assertEqual(out, (
+             "2026-10\n"
+-            "  food   250.00  ##########\n"
+-            "  rent  1000.00  " + "#" * 40 + "\n"
++            "  food   250.00  ########\n"
++            "  rent  1000.00  " + "#" * 30 + "\n"
+             "\n"
+             "2026-11\n"
+             "  misc     0.01  #\n"
+-            "  rent   500.00  " + "#" * 20 + "\n"))
++            "  rent   500.00  " + "#" * 15 + "\n"))
+ 
+     def test_rejects_bad_subcommand(self):
+         code, _, err = self.run_cli("report", "weekly")
+@@ -69,10 +69,10 @@ class ReportMonthlyTest(unittest.TestCase):
+             self.assertEqual(code, 0)
+             self.assertEqual(out, (
+                 "2026-10\n"
+-                "  food  250.00  " + "#" * 20 + "\n"
++                "  food  250.00  " + "#" * 15 + "\n"
+                 "\n"
+                 "2026-11\n"
+-                "  rent  500.00  " + "#" * 40 + "\n"))
++                "  rent  500.00  " + "#" * 30 + "\n"))
+ 
+     def test_since_after_all_entries(self):
+         tally.save_ledger([

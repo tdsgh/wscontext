@@ -1,0 +1,69 @@
+# The on/off benchmark: acceptance/benchmark.py runs each [[task]] headless in a fresh clone of the
+# stage 2 story repository (eval/stage2/repo.bundle at main, with the eval/stage2/corpus sessions in
+# its store), once with wscontext retrieval on and once with it off. Fields:
+#   id      unique; names the check and the solution files
+#   kind    where | impact | history: what the task needs to know (documentation and report grouping)
+#   prompt  what the session is asked to do; the runner adds that the run is unattended and not to commit
+#   check   a stdlib unittest file under eval/bench/, copied to the repository root only after the
+#           session ends; the task is done when it passes and the repository's own tests still pass
+# Each task has a known-good change in solutions/<id>.patch, used only by --verify-checks.
+
+[[task]]
+id = "category-length"
+kind = "where"
+prompt = "Category names may now be up to 32 characters long. Make that change, and keep the tests passing."
+check = "checks/category-length.py"
+
+[[task]]
+id = "bar-width"
+kind = "where"
+prompt = "Make the bars that `report monthly` prints at most 30 characters long instead of 40, still scaled to the largest total. Keep the tests passing."
+check = "checks/bar-width.py"
+
+[[task]]
+id = "currency-prefix"
+kind = "impact"
+prompt = "Let people type amounts with a leading dollar sign on the command line, like `add $12.50 food`, `budget set food $300` and `recur add $9.99 streaming --every monthly`. CSV import must keep accepting plain numbers only, as export writes them, and keep rejecting a file whose amount has a dollar sign. Keep the tests passing."
+check = "checks/currency-prefix.py"
+
+[[task]]
+id = "thousands-separator"
+kind = "impact"
+prompt = "Print amounts of 1000 or more with a comma between the thousands, like 1,234.50, everywhere tally prints an amount for a person to read. CSV export must keep writing plain numbers like 1234.50, so an exported file can still be imported. Keep the tests passing."
+check = "checks/thousands-separator.py"
+
+[[task]]
+id = "category-case"
+kind = "impact"
+prompt = "Make category names case-insensitive: `add 5 Food` should record the expense under food, and every command that takes a category should treat Food and food as the same category. Keep the tests passing."
+check = "checks/category-case.py"
+
+[[task]]
+id = "ledger-env"
+kind = "impact"
+prompt = "Add a TALLY_LEDGER environment variable that names the ledger file to use instead of ledger.json in the current directory. Every command that reads or writes entries must use it; budgets and recurring rules stay where they are. Keep the tests passing."
+check = "checks/ledger-env.py"
+
+[[task]]
+id = "backup-format"
+kind = "history"
+prompt = "Add `backup --output FILE`, which writes the ledger, the budgets and the recurring rules into one backup file, and `restore FILE`, which reads such a file back into ledger.json, budgets.json and recurring.json. Choose the backup file format in line with the storage decisions made earlier in this project. Keep the tests passing."
+check = "checks/backup-format.py"
+
+[[task]]
+id = "amount-rounding"
+kind = "history"
+prompt = "Amounts with more than two decimal places are rejected today. Round them to the nearest cent instead, with halves rounded up, so `add 19.999 food` records 20.00. Keep the exact-cents behaviour this project fixed earlier, and keep the tests passing."
+check = "checks/amount-rounding.py"
+
+[[task]]
+id = "warning-origin"
+kind = "history"
+prompt = "Find the commit that first added the warning `add` prints when a category passes 90 percent of its budget, and the branch that work was done on. Write them to WARNING_ORIGIN.txt in the repository root: the commit's SHA on the first line, the branch name on the second, nothing else. Change no other file."
+check = "checks/warning-origin.py"
+
+[[task]]
+id = "sqlite-timings"
+kind = "history"
+prompt = "Someone proposes a SQLite backend so that totals are faster. Find out whether this was evaluated before, and write the timings measured then for a total over 100000 entries to SQLITE_TIMINGS.txt in the repository root: the JSON time in milliseconds on the first line, the SQLite time in milliseconds on the second, numbers only. Change no other file."
+check = "checks/sqlite-timings.py"

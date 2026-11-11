@@ -1,0 +1,83 @@
+diff --git a/tally/cli.py b/tally/cli.py
+index 66f838d..16127ee 100644
+--- a/tally/cli.py
++++ b/tally/cli.py
+@@ -299,7 +299,8 @@ def cmd_export(opts, args):
+         for e in entries:
+             writer.writerow([entry_date(e),
+                              str(e.get("category", "")),
+-                             format_cents(int(e.get("amount", 0)))])
++                             format_cents(int(e.get("amount", 0)),
++                                          grouping=False)])
+     os.replace(tmp, output)
+     print(f"exported {len(entries)} entries to {output}")
+ 
+diff --git a/tally/money.py b/tally/money.py
+index 586da54..1bf2ef8 100644
+--- a/tally/money.py
++++ b/tally/money.py
+@@ -23,7 +23,10 @@ def parse_amount(text):
+     return int(cents)
+ 
+ 
+-def format_cents(cents):
++def format_cents(cents, grouping=True):
++    """Format cents for people, like 1,234.50; grouping=False gives 1234.50
++    for files that are read back, such as CSV exports."""
+     sign = "-" if cents < 0 else ""
+     cents = abs(cents)
+-    return f"{sign}{cents // 100}.{cents % 100:02d}"
++    dollars = f"{cents // 100:,}" if grouping else f"{cents // 100}"
++    return f"{sign}{dollars}.{cents % 100:02d}"
+diff --git a/tests/test_amount.py b/tests/test_amount.py
+index 91806b7..f7fc90d 100644
+--- a/tests/test_amount.py
++++ b/tests/test_amount.py
+@@ -4,7 +4,7 @@ import unittest
+ 
+ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+ 
+-from tally import parse_amount  # noqa: E402
++from tally import format_cents, parse_amount  # noqa: E402
+ 
+ 
+ class ParseAmountTest(unittest.TestCase):
+@@ -18,5 +18,17 @@ class ParseAmountTest(unittest.TestCase):
+         self.assertEqual(parse_amount("5"), 500)
+ 
+ 
++class FormatCentsTest(unittest.TestCase):
++    def test_thousands_are_grouped(self):
++        self.assertEqual(format_cents(123450), "1,234.50")
++        self.assertEqual(format_cents(123456789), "1,234,567.89")
++
++    def test_small_amounts_unchanged(self):
++        self.assertEqual(format_cents(99999), "999.99")
++
++    def test_plain_for_files(self):
++        self.assertEqual(format_cents(123450, grouping=False), "1234.50")
++
++
+ if __name__ == "__main__":
+     unittest.main()
+diff --git a/tests/test_report.py b/tests/test_report.py
+index 62f7ba3..6600005 100644
+--- a/tests/test_report.py
++++ b/tests/test_report.py
+@@ -43,12 +43,12 @@ class ReportMonthlyTest(unittest.TestCase):
+         self.assertEqual(code, 0)
+         self.assertEqual(out, (
+             "2026-10\n"
+-            "  food   250.00  ##########\n"
+-            "  rent  1000.00  " + "#" * 40 + "\n"
++            "  food    250.00  ##########\n"
++            "  rent  1,000.00  " + "#" * 40 + "\n"
+             "\n"
+             "2026-11\n"
+-            "  misc     0.01  #\n"
+-            "  rent   500.00  " + "#" * 20 + "\n"))
++            "  misc      0.01  #\n"
++            "  rent    500.00  " + "#" * 20 + "\n"))
+ 
+     def test_rejects_bad_subcommand(self):
+         code, _, err = self.run_cli("report", "weekly")
