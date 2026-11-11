@@ -47,7 +47,7 @@ def test_internal_commands_are_wired_to_their_modules(monkeypatch):
 def test_command_table():
     assert set(ctx_main.COMMANDS) == {"why", "sessions", "show", "forget", "stats", "init", "doctor",
                                       "uninstall", "sync", "find", "brief", "rebuild",
-                                      "eval"}
+                                      "eval", "code", "impact"}
 
 
 def test_a_command_imports_only_its_own_module(world):

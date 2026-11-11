@@ -22,13 +22,15 @@ COMMANDS = {
     "uninstall": "wscontext.cli.uninstall",
     "sync": "wscontext.cli.sync",
     "find": "wscontext.cli.find",
+    "code": "wscontext.cli.code",
+    "impact": "wscontext.cli.impact",
     "brief": "wscontext.cli.brief",
     "rebuild": "wscontext.cli.rebuild",
     "eval": "wscontext.cli.eval",
 }
 # Read commands that start the throttled background fetch when a sync remote is set (ADR-008).
 # They also spawn the `sweep` worker when a session is idle or the last sweep is a day old.
-FETCHING = {"why", "sessions", "show", "stats", "find", "brief"}
+FETCHING = {"why", "sessions", "show", "stats", "find", "brief", "code", "impact"}
 # Commands that read history refs: an upgraded repository with no write since still has its
 # history under the stage-1 ref until this moves it.
 MIGRATING = {"forget", "sync", "stats", "sessions"}

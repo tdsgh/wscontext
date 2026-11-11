@@ -118,3 +118,45 @@ def transcript_turns(store: StorePaths, record: SessionRecord) -> list[TurnView]
                 for t in parsed.turns]
     return [TurnView(t.index, t.started_at or None, None, t.tool_calls, t.tokens)
             for t in record.turns]
+
+
+class GraphError(Exception):
+    """The graph could not be refreshed or opened."""
+
+
+def open_graph(store: StorePaths, config):
+    """Refresh the graph within `[graph] query_budget_ms`, then open it read-only.
+
+    Returns the connection and the `Freshness` of the refresh; raises `GraphError`.
+    """
+    import sqlite3
+
+    from wscontext.graph import build, db
+    try:
+        fresh = build.refresh(store, config, config.graph.query_budget_ms)
+        return db.connect(store, readonly=True), fresh
+    except (GitError, OSError, sqlite3.Error, db.GraphUnavailable) as e:
+        raise GraphError(str(e)) from e
+
+
+def graph_caveats(fresh) -> tuple[list[str], str]:
+    """The call-log flags and the note for what may make a graph answer incomplete."""
+    flags, note = [], []
+    if fresh.busy:
+        flags.append("graph-busy")
+        note.append("graph-busy: another process is updating the graph; this answer comes from "
+                    "the graph as it is.")
+    elif not fresh.complete:
+        flags.append("graph-incomplete")
+        note.append("graph-incomplete: the graph is still being built, so this answer may be "
+                    "missing results; rerun in a moment.")
+    if fresh.parse_errors:
+        flags.append("parse-errors")
+        shown = ", ".join(fresh.parse_errors[:3]) + (", ..." if len(fresh.parse_errors) > 3 else "")
+        note.append(f"parse-errors: {len(fresh.parse_errors)} file(s) could not be parsed "
+                    f"completely ({shown}).")
+    if fresh.unavailable:
+        flags.append("language-unavailable")
+        note.append("language-unavailable: no parser for " + ", ".join(fresh.unavailable)
+                    + "; files in those languages are missing.")
+    return flags, "\n".join(note)

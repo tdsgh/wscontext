@@ -171,3 +171,29 @@ def sessions_for(conn: sqlite3.Connection, path: str, qualname: str | None = Non
         f"SELECT session_id, sha, path, qualname, committed_at FROM touched WHERE {where} "
         "ORDER BY committed_at DESC, sha, session_id LIMIT ?",
         (*args, -1 if limit is None else limit))]
+
+
+@dataclass(frozen=True)
+class Call:
+    # the file and line of the call
+    path: str
+    line: int
+    # the definition the call sits in; None for top-level code
+    caller: Symbol | None
+
+
+def callers_of(conn: sqlite3.Connection, name: str) -> list[Call]:
+    """The calls made to the short name `name`, by path and line. Matching is by name only, so a
+    call may be to any definition that shares it (see `name_count`)."""
+    rows = conn.execute(
+        "SELECT c.path, c.line, s.id, s.path, s.name, s.qualname, s.kind, s.start_line, "
+        "s.end_line, s.signature, p.qualname FROM calls c "
+        "LEFT JOIN symbols s ON s.id = c.caller_id LEFT JOIN symbols p ON p.id = s.parent_id "
+        "WHERE c.name = ? ORDER BY c.path, c.line, s.id", (name,))
+    return [Call(path, line, Symbol(*sym) if sym[0] is not None else None)
+            for path, line, *sym in rows]
+
+
+def name_count(conn: sqlite3.Connection, name: str) -> int:
+    """How many definitions have the short name `name`."""
+    return conn.execute("SELECT count(*) FROM symbols WHERE name = ?", (name,)).fetchone()[0]

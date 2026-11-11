@@ -152,3 +152,98 @@ def test_resolve_symbol_by_indentation_and_brackets():
     assert resolve_symbol(js, "z") == (5, 5)
     assert resolve_symbol(py, "missing") is None
 
+
+
+def _write(world, text):
+    (world.repo / "src" / "app.py").write_text(text)
+
+
+def test_why_resolves_a_bare_name_through_the_graph(world, capsys):
+    data = run_json(world, capsys, "why", "#alpha")
+    assert data["file"] == "src/app.py" and data["lines"] == [1, 2] and data["symbol"] == "alpha"
+    assert parse_target("#alpha") == ("", None, None, "alpha")
+
+
+def test_why_method_by_qualified_name(world, capsys):
+    _write(world, "class Box:\n    def open(self):\n        return 1\n\n    def close(self):\n        return 2\n")
+    data = run_json(world, capsys, "why", "src/app.py#Box.close")
+    assert data["lines"] == [5, 6]
+    assert run_json(world, capsys, "why", "src/app.py#close")["lines"] == [5, 6]
+
+
+def test_why_follows_uncommitted_edits(world, capsys):
+    _write(world, "# a new first line\n" + (world.repo / "src" / "app.py").read_text())
+    assert run_json(world, capsys, "why", "src/app.py#alpha")["lines"] == [2, 3]
+
+
+def test_why_several_candidates_are_listed_and_exit_1(world, capsys):
+    (world.repo / "src" / "twin.py").write_text("def alpha():\n    return 0\n")
+    code, out, err = world.ctx(capsys, "why", "#alpha")
+    assert code == 1 and err == "" and "Several definitions match" in out
+    assert "[definition src/app.py:1-2]" in out and "[definition src/twin.py:1-2]" in out
+    assert "ctx why src/app.py#alpha" in out
+    data = json.loads(world.ctx(capsys, "why", "#alpha", "--json")[1])
+    assert data["ambiguous"] is True and [r["path"] for r in data["results"]] == [
+        "src/app.py", "src/twin.py"]
+    assert world.ctx(capsys, "why", "src/twin.py#alpha")[0] == 0
+
+
+def test_why_unknown_bare_name(world, capsys):
+    code, _, err = world.ctx(capsys, "why", "#nothing_here")
+    assert code == 1 and "no definition" in err
+
+
+def test_why_lists_sessions_that_changed_it_after_blame_moved_on(world, capsys):
+    _write(world, "def alpha():\n    return 11\n\ndef beta():\n    return 3\n")
+    run_git(world.repo, "add", "src")
+    c3 = commit(world.repo, "beta three", "2026-01-03T12:00:00+00:00")
+    add_session(world.store, "sess-two", transcript=False, started="2026-01-03T10:00:00Z")
+    checkpoint(world.store, c3, ["sess-two"])
+    _write(world, "def alpha():\n    return 11\n\ndef beta():\n    return 4\n")
+    run_git(world.repo, "add", "src")
+    commit(world.repo, "beta four", "2026-01-04T12:00:00+00:00")
+    data = run_json(world, capsys, "why", "src/app.py#beta")
+    assert "sess-two" not in json.dumps([r for r in data["results"] if r["type"] == "commit"])
+    block = data["results"][-1]
+    assert block["type"] == "sessions" and block["title"] == "sessions that changed this function"
+    assert [s["id"] for s in block["sessions"]] == ["sess-two"]
+    assert block["links"] == ["ctx show sess-two"]
+    _, text, _ = world.ctx(capsys, "why", "src/app.py#beta")
+    assert "[sessions src/app.py#beta] sessions that changed this function" in text
+    assert "session sess-two (2026-01-03" in text
+
+
+def test_why_does_not_repeat_a_session_blame_already_shows(world, capsys):
+    checkpoint(world.store, world.c1, ["sess-one"])
+    data = run_json(world, capsys, "why", "src/app.py#alpha")
+    assert [r["type"] for r in data["results"]] == ["commit", "commit"]
+
+
+def test_why_falls_back_to_the_regex_when_the_graph_is_unavailable(world, capsys, monkeypatch):
+    import sqlite3
+
+    from wscontext.graph import build
+
+    def broken(*a, **k):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(build, "refresh", broken)
+    data = run_json(world, capsys, "why", "src/app.py#alpha")
+    assert data["lines"] == [1, 2] and [r["type"] for r in data["results"]] == ["commit", "commit"]
+    code, _, err = world.ctx(capsys, "why", "#alpha")
+    assert code == 1 and "no code graph" in err
+    log = (world.store.logs / "ctx-calls.jsonl").read_text()
+    assert "graph-unavailable" in log
+
+
+def test_why_on_a_language_the_graph_does_not_parse_uses_the_regex(world, capsys):
+    (world.repo / "tool.go").write_text("package x\n\nfunc hello() {\n}\n")
+    run_git(world.repo, "add", "tool.go")
+    commit(world.repo, "go", "2026-01-03T12:00:00+00:00")
+    assert run_json(world, capsys, "why", "tool.go#hello")["lines"] == [3, 4]
+
+
+def test_why_flags_a_parse_error(world, capsys):
+    (world.repo / "src" / "bad.py").write_text("def broken(:\n    pass\n")
+    data = run_json(world, capsys, "why", "src/app.py#alpha")
+    assert data["note"] and "parse-errors" in data["note"]

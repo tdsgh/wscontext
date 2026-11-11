@@ -12,10 +12,10 @@ EVAL = FIXTURES / "eval"
 
 def test_rebuild_recreates_the_index_and_reports_counts(world, capsys):
     checkpoint(world.store, world.c1, ["sess-one"])
-    code, out, _ = world.ctx(capsys, "rebuild")
+    code, out, _ = world.ctx(capsys, "rebuild", "--index")
     assert code == 0 and out == "Index rebuilt: 1 sessions, 1 commits indexed."
     assert db_path(world.store).is_file()
-    data = run_json(world, capsys, "rebuild")
+    data = run_json(world, capsys, "rebuild", "--index")
     assert data["sessions_indexed"] == 1 and data["commits_indexed"] == 1 and data["locked"] is False
     assert run_json(world, capsys, "find", "retry")["results"][0]["id"] == "sess-one"
 
@@ -115,3 +115,20 @@ def test_eval_with_an_unreadable_bundle_is_an_error(world, capsys, tmp_path):
     (corpus.parent / "repo.bundle").write_text("not a bundle\n")
     code, _, err = world.ctx(capsys, "eval", "--corpus", str(corpus), "--questions", str(questions))
     assert code == 1 and "cannot clone" in err
+
+
+def test_rebuild_builds_the_graph_too_by_default(world, capsys):
+    from wscontext.graph import db
+    code, out, _ = world.ctx(capsys, "rebuild")
+    lines = out.splitlines()
+    assert code == 0 and lines[0].startswith("Index rebuilt:") and lines[1] == "Graph rebuilt: 1 files parsed."
+    assert db.db_path(world.store).is_file()
+    only = run_json(world, capsys, "rebuild", "--graph")
+    assert "sessions_indexed" not in only and only["graph"]["files_parsed"] == 1
+    assert "graph" not in run_json(world, capsys, "rebuild", "--index")
+
+
+def test_rebuild_index_and_graph_exclude_each_other(world, capsys):
+    import pytest
+    with pytest.raises(SystemExit):
+        world.ctx(capsys, "rebuild", "--index", "--graph")

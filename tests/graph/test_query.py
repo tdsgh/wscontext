@@ -113,3 +113,29 @@ def test_resolve_a_name_across_the_repository_gives_one_or_the_candidates(conn):
     assert where(query.resolve(conn, "Shape.render").symbols) == [
         ("pkg/shapes.py", "Shape.render")]
     assert query.resolve(conn, "#nothing").symbols == []
+
+
+def test_callers_of_lists_calls_by_path_and_line_with_the_calling_definition(store):
+    write(store, "pkg/__init__.py", "")
+    write(store, "pkg/shapes.py", SHAPES)
+    write(store, "plan.py", PLAN + "\n\nprint(area())\n")
+    refresh(store, config())
+    conn = db.connect(store, readonly=True)
+    try:
+        found = query.callers_of(conn, "area")
+        assert [(c.path, c.line, c.caller and c.caller.qualname) for c in found] == [
+            ("pkg/shapes.py", 6, "Shape.render"), ("pkg/shapes.py", 10, "area_of"),
+            ("plan.py", 5, "area"), ("plan.py", 10, "Planner.area"), ("plan.py", 13, None)]
+        method = found[3].caller
+        assert (method.name, method.kind, method.start, method.end, method.parent) == (
+            "area", "method", 9, 10, "Planner")
+        assert method.id is not None
+        assert query.callers_of(conn, "nothing_calls_this") == []
+    finally:
+        conn.close()
+
+
+def test_name_count_counts_the_definitions_sharing_a_short_name(conn):
+    assert query.name_count(conn, "area") == 3
+    assert query.name_count(conn, "render") == 1
+    assert query.name_count(conn, "missing") == 0
