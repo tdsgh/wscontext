@@ -1,0 +1,15 @@
+# The subject acceptance/benchmark.py runs eval/bench/tasks.toml against (the default --subject).
+# Paths are relative to this folder. Fields, all required except tools:
+#   bundle  the Git bundle to clone
+#   branch  the branch of the bundle to check out
+#   store   the folder whose raw/ and records/ are copied into the clone's store
+#   suite   the command that runs the subject's own tests in the clone; a leading `python` is the
+#           clone's interpreter when it has a .venv, the runner's otherwise
+#   setup   none | uv-venv (create .venv in the clone with uv, install the clone editable with its dev group)
+#   tools   extra allowed tools on top of the runner's own, e.g. "Bash(.venv/bin/pytest:*)"
+bundle = "../stage2/repo.bundle"
+branch = "main"
+store = "../stage2/corpus"
+suite = "python -m unittest discover -s tests"
+setup = "none"
+tools = ""

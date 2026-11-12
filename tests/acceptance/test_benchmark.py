@@ -27,7 +27,8 @@ from wscontext.store.paths import StorePaths
 from wscontext.store.records import SessionRecord, TurnRecord, write_session
 
 ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1", "GIT_EDITOR": "true"}
-REAL_TASKS = bm.load_tasks(bm.BENCH / "tasks.toml")
+STORY = bm.load_subject(bm.BENCH)
+REAL_TASKS = bm.load_tasks(STORY.dir / "tasks.toml")
 CHECK = "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_x(self):\n        pass\n\n\nunittest.main()\n"
 
 
@@ -102,7 +103,7 @@ def test_the_prompt_tells_the_session_it_is_unattended_and_not_to_commit():
 def test_prepare_commits_the_arms_switch_over_the_story_with_its_corpus(tmp_path, arm):
     acc = FakeAcc(tmp_path, None, None, 1.0, ENV)
     repo = tmp_path / "clone"
-    head = bm.prepare(acc, repo, arm)
+    head = bm.prepare(acc, STORY, repo, arm)
     assert head == run_git(repo, "rev-parse", "HEAD~1").strip()
     assert run_git(repo, "log", "-1", "--format=%s").strip() == f"Benchmark arm: retrieval {arm}"
     config = run_git(repo, "show", "HEAD:.wscontext/config.toml")
@@ -111,7 +112,7 @@ def test_prepare_commits_the_arms_switch_over_the_story_with_its_corpus(tmp_path
     assert run_git(repo, "remote").strip() == ""
     assert {"feature-budgets", "feature-report", "main"} <= set(run_git(repo, "branch", "--format=%(refname:short)").split())
     store = StorePaths.resolve(repo).local
-    corpus = bm.STORY / "corpus"
+    corpus = STORY.store
     for name in ("raw", "records"):
         wanted = sorted(p.relative_to(corpus).as_posix() for p in (corpus / name).rglob("*") if p.is_file())
         assert sorted(p.relative_to(store).as_posix() for p in (store / name).rglob("*") if p.is_file()) == wanted
@@ -121,18 +122,18 @@ def test_prepare_commits_the_arms_switch_over_the_story_with_its_corpus(tmp_path
 @pytest.mark.parametrize("task", REAL_TASKS, ids=[t.id for t in REAL_TASKS])
 def test_each_check_fails_on_the_untouched_story_and_passes_with_its_solution(tmp_path, task, capsys):
     acc = Acc(tmp_path, None, None, 0, ENV)
-    assert bm.verify_checks(acc, [task]) == [], capsys.readouterr().out
+    assert bm.verify_checks(acc, STORY, [task]) == [], capsys.readouterr().out
 
 
 def test_a_failing_story_suite_makes_a_task_not_done_even_when_its_check_passes(tmp_path):
     acc = Acc(tmp_path, None, None, 0, ENV)
     task = next(t for t in REAL_TASKS if t.id == "sqlite-timings")
     repo = tmp_path / "clone"
-    bm.clone_story(acc, repo)
+    bm.clone_subject(acc, STORY, repo)
     (repo / "SQLITE_TIMINGS.txt").write_text("44.55\n3.62\n")
     (repo / "tests" / "test_amount.py").write_text("import unittest\n\n\nclass T(unittest.TestCase):\n"
                                                    "    def test_x(self):\n        self.fail('broken')\n")
-    found = bm.run_check(acc, repo, bm.BENCH / task.check)
+    found = bm.run_check(acc, STORY, repo, bm.BENCH / task.check)
     assert (found["check"], found["suite"], found["done"]) == (True, False, False)
     assert "broken" in found["suite_output"] and "check_output" not in found
 
@@ -192,17 +193,17 @@ class SessionAcc(FakeAcc):
 def test_a_session_runs_its_check_after_it_ends_and_records_the_figures(tmp_path):
     acc = SessionAcc(tmp_path, None, None, 1.0, ENV)
     task = next(t for t in REAL_TASKS if t.id == "bar-width")
-    found = bm.run_session(acc, task, "on", 1)
+    found = bm.run_session(acc, STORY, task, "on", 1)
     assert (found["done"], found["error"], found["turns"], found["cost_usd"], found["tool_calls"],
             found["search"], found["tokens"], found["seconds"]) == (True, None, 9, 0.31, 3, 1, 15, 25.0)
     claude = next(c for c in acc.calls if c[0] == "claude")
-    assert claude[1] == bm.prompt(task) and claude[2] == bm.BENCH_TOOLS
+    assert claude[1] == bm.prompt(task) and claude[2] == bm.BENCH_TOOLS == STORY.tools_allowed
 
 
 def test_a_session_that_times_out_is_not_done_and_says_why(tmp_path):
     acc = SessionAcc(tmp_path, None, None, 1.0, ENV, timeout=True)
     task = next(t for t in REAL_TASKS if t.id == "warning-origin")
-    found = bm.run_session(acc, task, "off", 1)
+    found = bm.run_session(acc, STORY, task, "off", 1)
     assert found["done"] is False and found["error"] == "claude: claude -p ran longer than 300s"
 
 
@@ -287,7 +288,7 @@ def test_a_clone_keeps_every_corpus_session_when_the_clock_is_two_years_ahead(tm
     # reaches it. A history tip with something else on it makes the prune pass do its full check.
     acc = FakeAcc(tmp_path, None, None, 1.0, ENV)
     repo = tmp_path / "clone"
-    bm.prepare(acc, repo, "on")
+    bm.prepare(acc, STORY, repo, "on")
     store = StorePaths.resolve(repo)
     other = store.raw / "sessions" / "2026-01-01-other.jsonl"
     other.write_text("{}\n")
@@ -299,4 +300,139 @@ def test_a_clone_keeps_every_corpus_session_when_the_clock_is_two_years_ahead(tm
     assert worker._prune(store, load_config(repo)) == []
     assert sorted(p for p in store.raw.rglob("*") if p.is_file()) == before
     assert len(list((store.records / "sessions").glob("*.json"))) == len(
-        list((bm.STORY / "corpus" / "records" / "sessions").glob("*.json")))
+        list((STORY.store / "records" / "sessions").glob("*.json")))
+
+
+def test_the_story_subject_is_the_stage_2_clone_with_its_corpus_and_the_runners_interpreter():
+    assert (STORY.bundle.name, STORY.branch, STORY.store.name, STORY.setup, STORY.tools) == (
+        "repo.bundle", "main", "corpus", "none", "")
+    assert STORY.bundle.parent == STORY.store.parent and STORY.bundle.parent.name == "stage2"
+    assert STORY.suite == "python -m unittest discover -s tests"
+
+
+def subject_file(folder: Path, **fields) -> Path:
+    base = {"bundle": "b.bundle", "branch": "main", "store": "store", "suite": "python -m unittest",
+            "setup": "none", **fields}
+    folder.mkdir(exist_ok=True)
+    (folder / "subject.toml").write_text("".join(f'{k} = "{v}"\n' for k, v in base.items()))
+    return folder
+
+
+def test_a_subject_file_loads_with_its_optional_tools(tmp_path):
+    subject = bm.load_subject(subject_file(tmp_path, setup="uv-venv", tools="Bash(.venv/bin/pytest:*)"))
+    assert (subject.setup, subject.bundle, subject.store) == ("uv-venv", tmp_path / "b.bundle", tmp_path / "store")
+    assert subject.tools_allowed == bm.BENCH_TOOLS + " Bash(.venv/bin/pytest:*)"
+
+
+@pytest.mark.parametrize(("fields", "message"), [
+    ({"extra": "x"}, r"unknown fields \['extra'\]"),
+    ({"setup": "pip"}, "setup is 'pip'"),
+    ({"suite": " "}, "suite is empty"),
+])
+def test_an_invalid_subject_file_is_refused(tmp_path, fields, message):
+    with pytest.raises(Fail, match=message):
+        bm.load_subject(subject_file(tmp_path, **fields))
+
+
+def test_a_subject_file_without_a_required_field_is_refused(tmp_path):
+    (tmp_path / "subject.toml").write_text('bundle = "b"\nbranch = "main"\n')
+    with pytest.raises(Fail, match=r"lacks \['setup', 'store', 'suite'\]"):
+        bm.load_subject(tmp_path)
+
+
+def test_a_subject_with_a_venv_runs_its_check_and_suite_with_the_clones_interpreter(tmp_path):
+    ran = []
+
+    @dataclass
+    class Recording(FakeAcc):
+        def run(self, cmd, cwd, stdin=None, timeout=120, env=None):
+            ran.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    acc = Recording(tmp_path, None, None, 1.0, ENV)
+    repo = tmp_path / "clone"
+    (repo / ".venv" / "bin").mkdir(parents=True)
+    (repo / ".venv" / "bin" / "python").write_text("")
+    source = tmp_path / "check.py"
+    source.write_text(CHECK)
+    subject = bm.Subject(tmp_path, tmp_path, "main", tmp_path, "python -m pytest -q", "uv-venv", "")
+    assert bm.run_check(acc, subject, repo, source)["done"] is True
+    python = str(repo / ".venv" / "bin" / "python")
+    assert ran == [[python, bm.CHECK_FILE], [python, "-m", "pytest", "-q"]]
+    ran.clear()
+    (repo / ".venv" / "bin" / "python").unlink()
+    bm.run_check(acc, subject, repo, source)
+    assert ran == [[sys.executable, bm.CHECK_FILE], [sys.executable, "-m", "pytest", "-q"]]
+
+
+def test_the_uv_venv_setup_builds_a_venv_in_the_clone_and_keeps_it_out_of_the_commits(tmp_path, monkeypatch):
+    ran = []
+
+    @dataclass
+    class Recording(Acc):
+        def run(self, cmd, cwd, stdin=None, timeout=120, env=None):
+            if cmd[0] != "uv":
+                return super().run(cmd, cwd, stdin, timeout, env)
+            ran.append((cmd, cwd))
+            return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(bm.shutil, "which", lambda name: "/bin/uv")
+    acc = Recording(tmp_path, None, None, 1.0, ENV)
+    repo = tmp_path / "clone"
+    bm.clone_subject(acc, bm.Subject(STORY.dir, STORY.bundle, "main", STORY.store, STORY.suite, "uv-venv", ""), repo)
+    assert [c[0][:3] for c in ran] == [["uv", "venv", "-q"], ["uv", "pip", "install"]]
+    assert all(cwd == repo for _, cwd in ran) and "-e" in ran[1][0] and "dev" in ran[1][0]
+    (repo / ".venv").mkdir()
+    (repo / ".venv" / "x").write_text("")
+    assert run_git(repo, "status", "--porcelain") == ""
+
+
+def absent_subject(tmp_path: Path):
+    """A one-commit subject whose file says 'in-the-tree' and whose commit message says 'in-the-log'."""
+    src = tmp_path / "src"
+    src.mkdir()
+    run_git(src, "init", "-q", "-b", "main")
+    run_git(src, "config", "user.name", "t")
+    run_git(src, "config", "user.email", "t@example.invalid")
+    (src / "f.txt").write_text("in-the-tree\n")
+    run_git(src, "add", "f.txt")
+    run_git(src, "commit", "-q", "-m", "in-the-log")
+    folder = tmp_path / "subject"
+    (folder / "store" / "records").mkdir(parents=True)
+    run_git(src, "bundle", "create", str(folder / "b.bundle"), "main")
+    subject_file(folder, suite="python -c pass")
+    (folder / "solutions").mkdir()
+    (folder / "solutions" / "a.patch").write_text(
+        "diff --git a/g.txt b/g.txt\nnew file mode 100644\n--- /dev/null\n+++ b/g.txt\n@@ -0,0 +1 @@\n+x\n")
+    (folder / "checks").mkdir()
+    (folder / "checks" / "a.py").write_text(
+        "import pathlib, unittest\n\n\nclass T(unittest.TestCase):\n    def test_x(self):\n"
+        "        self.assertTrue(pathlib.Path('g.txt').exists())\n\n\nunittest.main()\n")
+    return bm.load_subject(folder), folder
+
+
+@pytest.mark.parametrize(("absent", "where"), [
+    ([], None), (["nowhere"], None), (["in-the-tree"], "tracked files"), (["in-the-log"], "commit messages")])
+def test_an_absent_string_in_the_tree_or_the_log_fails_verify_checks(tmp_path, absent, where, capsys):
+    subject, folder = absent_subject(tmp_path)
+    (folder / "tasks.toml").write_text(entry() + "absent = " + json.dumps(absent) + "\n")
+    task = bm.load_tasks(folder / "tasks.toml")[0]
+    assert task.absent == tuple(absent)
+    (tmp_path / "work").mkdir()
+    problems = bm.verify_checks(Acc(tmp_path / "work", None, None, 0, ENV), subject, [task])
+    assert problems == ([] if where is None else [f"a: the answer string {absent[0]!r} is in the {where}"])
+    capsys.readouterr()
+
+
+def test_absent_must_be_a_list_of_strings(tmp_path):
+    with pytest.raises(Fail, match="absent must be a list of non-empty strings"):
+        bm.load_tasks(tasks_file(tmp_path, entry(absent="plain")))
+
+
+def test_the_dry_run_prints_the_subject_and_the_report_goes_to_its_runs_folder(capsys):
+    assert bm.main(["--dry-run", "--tasks", "bar-width"]) == 0
+    out = capsys.readouterr().out
+    for line in ("bundle: eval/stage2/repo.bundle at main", "suite: python -m unittest discover -s tests",
+                 "setup: none", "extra tools: none", "recorded sessions from eval/stage2/corpus",
+                 "report: eval/bench/runs/"):
+        assert line in out

@@ -2,3 +2,6 @@
 __pycache__/
 docs/build-plan-*.md
 docs/hist/build-plan-*.md
+
+# the Alpha benchmark subject: bundle, store copy, tasks, solutions and reports stay local
+eval/alpha/

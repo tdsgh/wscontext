@@ -45,11 +45,14 @@ from record_corpus import ROOT, STORY_TOOLS, end_session, isolation
 from stage1 import PLUGIN_ID, Acc, Fail, check, locate_plugin, wait_for
 from stage2 import set_config
 
-BENCH = ROOT / "eval" / "bench"
-STORY = ROOT / "eval" / "stage2"
+BENCH = ROOT / "eval" / "bench"  # the default subject
 ARMS = ("off", "on")  # the order each task runs in
 KINDS = {"where", "impact", "history"}
 FIELDS = {"id", "kind", "prompt", "check"}
+OPTIONAL_FIELDS = {"absent"}
+SUBJECT_FIELDS = {"bundle", "branch", "store", "suite", "setup"}
+SUBJECT_OPTIONAL = {"tools"}
+SETUPS = ("none", "uv-venv")
 # the recorder's tools, plus the search tools and the Git history commands an agent reaches for
 BENCH_TOOLS = STORY_TOOLS + " Grep Glob Bash(git blame:*) Bash(git branch:*)"
 UNATTENDED = ("This is an unattended run: nobody will answer questions or grant permissions. Run every "
@@ -73,15 +76,53 @@ class Task:
     kind: str
     prompt: str
     check: str  # relative to the tasks file's folder
+    absent: tuple[str, ...] = ()  # strings the answer contains; none may be in the subject's files or log
+
+
+@dataclass
+class Subject:
+    dir: Path
+    bundle: Path
+    branch: str
+    store: Path
+    suite: str
+    setup: str
+    tools: str
+
+    @property
+    def tools_allowed(self) -> str:
+        return f"{BENCH_TOOLS} {self.tools}".strip() if self.tools else BENCH_TOOLS
+
+
+def rel(path: Path) -> str:
+    return str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
+
+
+def load_subject(folder: Path) -> Subject:
+    path = folder / "subject.toml"
+    check(path.is_file(), f"no {path}")
+    raw = tomllib.loads(path.read_text(encoding="utf-8"))
+    unknown, missing = set(raw) - SUBJECT_FIELDS - SUBJECT_OPTIONAL, SUBJECT_FIELDS - set(raw)
+    check(not unknown, f"{path.name}: unknown fields {sorted(unknown)}")
+    check(not missing, f"{path.name}: lacks {sorted(missing)}")
+    for key, value in raw.items():
+        check(isinstance(value, str), f"{path.name}: {key} must be a string")
+    check(raw["setup"] in SETUPS, f"{path.name}: setup is {raw['setup']!r}, wanted one of {list(SETUPS)}")
+    check(raw["suite"].strip(), f"{path.name}: suite is empty")
+    return Subject(folder, (folder / raw["bundle"]).resolve(), raw["branch"], (folder / raw["store"]).resolve(), raw["suite"],
+                   raw["setup"], raw.get("tools", ""))
 
 
 def load_tasks(path: Path) -> list[Task]:
     tasks = []
     for raw in tomllib.loads(path.read_text(encoding="utf-8")).get("task", []):
-        unknown, missing = set(raw) - FIELDS, FIELDS - set(raw)
+        unknown, missing = set(raw) - FIELDS - OPTIONAL_FIELDS, FIELDS - set(raw)
         check(not unknown, f"{path.name}: task {raw.get('id')!r} has unknown fields {sorted(unknown)}")
         check(not missing, f"{path.name}: task {raw.get('id')!r} lacks {sorted(missing)}")
-        tasks.append(Task(**{k: str(v) for k, v in raw.items()}))
+        absent = raw.get("absent", [])
+        check(isinstance(absent, list) and all(isinstance(a, str) and a for a in absent),
+              f"{path.name}: task {raw.get('id')!r}: absent must be a list of non-empty strings")
+        tasks.append(Task(**{k: str(v) for k, v in raw.items() if k != "absent"}, absent=tuple(absent)))
     check(tasks, f"{path.name} holds no tasks")
     ids = [t.id for t in tasks]
     check(len(set(ids)) == len(ids), f"{path.name}: duplicate task ids")
@@ -116,24 +157,40 @@ def prompt(task: Task) -> str:
 
 # --- one session ---------------------------------------------------------------------------------
 
-def clone_story(acc: Acc, repo: Path) -> None:
-    """A clone of the story bundle at main, with its branches as local branches and no remote."""
-    acc.git(acc.tmp, "clone", "-q", str(STORY / "repo.bundle"), str(repo))
+def venv_python(repo: Path) -> Path | None:
+    for name in ("bin/python", "Scripts/python.exe"):
+        if (repo / ".venv" / name).exists():
+            return repo / ".venv" / name
+    return None
+
+
+def clone_subject(acc: Acc, subject: Subject, repo: Path) -> None:
+    """A clone of the subject's bundle at its branch, with the other branches as local branches and no remote."""
+    acc.git(acc.tmp, "clone", "-q", "--branch", subject.branch, str(subject.bundle), str(repo))
     for ref in acc.git(repo, "for-each-ref", "--format=%(refname:short)", "refs/remotes/origin/").split():
         branch = ref.removeprefix("origin/")
-        if branch not in ("HEAD", "origin", "main"):
+        if branch not in ("HEAD", "origin", subject.branch):
             acc.git(repo, "branch", "-q", branch, ref)
     acc.git(repo, "remote", "remove", "origin")
     acc.identify(repo)
+    if subject.setup == "uv-venv":
+        check(shutil.which("uv"), "setup uv-venv needs uv on PATH")
+        # its own throwaway venv, never the repository's; kept out of the commits
+        with (repo / ".git" / "info" / "exclude").open("a", encoding="utf-8") as f:
+            f.write("/.venv/\n")
+        for cmd in (["uv", "venv", "-q", ".venv"],
+                    ["uv", "pip", "install", "-q", "--python", str(Path(".venv", "bin", "python")), "-e", ".", "--group", "dev"]):
+            done = acc.run(cmd, repo, timeout=600, env={"VIRTUAL_ENV": ""})
+            check(done.returncode == 0, f"{' '.join(cmd[:3])} failed in the clone: {(done.stdout + done.stderr).strip()[-400:]}")
 
 
-def prepare(acc: Acc, repo: Path, arm: str) -> str:
-    """Clone, corpus into the store, the arm's switch committed, index and graph built; returns the story's head."""
-    clone_story(acc, repo)
+def prepare(acc: Acc, subject: Subject, repo: Path, arm: str) -> str:
+    """Clone, store contents in, the arm's switch committed, index and graph built; returns the subject's head."""
+    clone_subject(acc, subject, repo)
     head = acc.git(repo, "rev-parse", "HEAD")
     store = acc.store(repo)
     for name in ("raw", "records"):
-        shutil.copytree(STORY / "corpus" / name, store / name, dirs_exist_ok=True)
+        shutil.copytree(subject.store / name, store / name, dirs_exist_ok=True)
     set_config(repo, "retrieval", "enabled", "true" if arm == "on" else "false")
     acc.ctx(repo, "init")  # the CLAUDE.md block follows the switch
     acc.git(repo, "add", "-A")
@@ -142,14 +199,18 @@ def prepare(acc: Acc, repo: Path, arm: str) -> str:
     return head
 
 
-def run_check(acc: Acc, repo: Path, source: Path) -> dict:
-    """Copy the check in and run it, then the repository's own tests; done when both pass."""
+def run_check(acc: Acc, subject: Subject, repo: Path, source: Path) -> dict:
+    """Copy the check in and run it, then the repository's own tests; done when both pass.
+
+    With the clone's own .venv both run on its interpreter, never the runner's: the clone's code wins."""
     shutil.copyfile(source, repo / CHECK_FILE)
     # bytecode compiled before an edit of the same size in the same second would still be used
     fresh = {"PYTHONPYCACHEPREFIX": tempfile.mkdtemp(prefix="pycache-", dir=acc.tmp)}
     out: dict = {}
-    for name, cmd in (("check", [sys.executable, CHECK_FILE]),
-                      ("suite", [sys.executable, "-m", "unittest", "discover", "-s", "tests"])):
+    python = str(venv_python(repo) or sys.executable)
+    suite = shlex.split(subject.suite)
+    suite[0] = python if suite[0] == "python" else suite[0]
+    for name, cmd in (("check", [python, CHECK_FILE]), ("suite", suite)):
         try:
             done = acc.run(cmd, repo, timeout=CHECK_TIMEOUT, env=fresh)
             out[name], text = done.returncode == 0, done.stdout + done.stderr
@@ -203,15 +264,15 @@ def figures(results: list[dict]) -> dict:
             "ended_by": merged.get("ended_by"), "retrieval": merged.get("retrieval")}
 
 
-def run_session(acc: Acc, task: Task, arm: str, n: int) -> dict:
+def run_session(acc: Acc, subject: Subject, task: Task, arm: str, n: int) -> dict:
     repo = acc.tmp / f"{task.id}-{arm}-{n}"
-    head = prepare(acc, repo, arm)
+    head = prepare(acc, subject, repo, arm)
     sid = str(uuid.uuid4())
     row: dict = {"task": task.id, "kind": task.kind, "arm": arm, "run": n, "session": sid,
                  "story_head": head, "error": None}
     run, failed = None, False
     try:
-        sid, proc, run = acc.claude_start(repo, prompt(task), session=sid, tools=BENCH_TOOLS)
+        sid, proc, run = acc.claude_start(repo, prompt(task), session=sid, tools=subject.tools_allowed)
         done = acc.claude_finish(sid, proc, run)
         row["session"] = sid = done.session_id
         failed = done.is_error
@@ -221,7 +282,7 @@ def run_session(acc: Acc, task: Task, arm: str, n: int) -> dict:
     if failed:  # the spend cap ends a session this way too
         row["error"] = f"claude reported an error ({row['result']})"
     row["error"] = ((row["error"] or "") + end_session(acc, repo, sid)).removeprefix("; ") or None
-    row.update(run_check(acc, repo, BENCH / task.check))
+    row.update(run_check(acc, subject, repo, subject.dir / task.check))
     try:
         results = wait_for(lambda: (r := acc.ctx_json(repo, "--full", "stats", "session", sid)["results"])
                            and r[0].get("ended_by") and r, f"session {sid} to end in the store")
@@ -328,23 +389,35 @@ def write_report(doc: dict, out: Path) -> tuple[Path, Path]:
 
 # --- offline modes -------------------------------------------------------------------------------
 
-def verify_checks(acc: Acc, tasks: list[Task]) -> list[str]:
-    """Each check fails on the untouched story and passes with its solution; returns the problems."""
+def present(acc: Acc, repo: Path, text: str) -> list[str]:
+    """Where `text` appears in the clone: its tracked files, its commit messages."""
+    where = []
+    if acc.run(["git", "grep", "-q", "-F", "-e", text], repo).returncode == 0:
+        where.append("tracked files")
+    if acc.git(repo, "log", "--all", "-F", f"--grep={text}", "--format=%h"):
+        where.append("commit messages")
+    return where
+
+
+def verify_checks(acc: Acc, subject: Subject, tasks: list[Task]) -> list[str]:
+    """Each check fails on the untouched subject and passes with its solution, and no `absent` string
+    of a task is in the clone's files or log; returns the problems."""
     problems = []
     for t in tasks:
-        patch = BENCH / "solutions" / f"{t.id}.patch"
+        patch = subject.dir / "solutions" / f"{t.id}.patch"
         repo = acc.tmp / t.id
-        clone_story(acc, repo)
-        before = run_check(acc, repo, BENCH / t.check)
+        clone_subject(acc, subject, repo)
+        leaks = [f"the answer string {a!r} is in the {w}" for a in t.absent for w in present(acc, repo, a)]
+        before = run_check(acc, subject, repo, subject.dir / t.check)
         if patch.is_file():
             acc.git(repo, "apply", str(patch))
-            after = run_check(acc, repo, BENCH / t.check)
+            after = run_check(acc, subject, repo, subject.dir / t.check)
         else:
             after = {"done": False, "check": False, "suite": False, "check_output": f"no {patch.name}"}
-        found = [x for x in (None if before["suite"] else "the untouched story's tests fail",
-                             "the check passes on the untouched story" if before["check"] else None,
+        found = [x for x in (None if before["suite"] else "the untouched subject's tests fail",
+                             "the check passes on the untouched subject" if before["check"] else None,
                              None if after["check"] else "the check fails with the solution",
-                             None if after["suite"] else "the story's tests fail with the solution") if x]
+                             None if after["suite"] else "the subject's tests fail with the solution") if x] + leaks
         problems += [f"{t.id}: {p}" for p in found]
         print(f"{'ok  ' if not found else 'FAIL'} {t.id:22} untouched: check {'passes' if before['check'] else 'fails'}"
               f"; with solution: check {'passes' if after['check'] else 'fails'}, tests "
@@ -355,28 +428,31 @@ def verify_checks(acc: Acc, tasks: list[Task]) -> list[str]:
     return problems
 
 
-def print_plan(tasks: list[Task], runs: int, budget: float, model: str | None, env: dict) -> None:
+def print_plan(subject: Subject, tasks: list[Task], runs: int, budget: float, model: str | None, env: dict,
+               out: Path) -> None:
     sessions = len(tasks) * len(ARMS) * runs
     print(f"{len(tasks)} task(s) x {len(ARMS)} arms ({' then '.join(ARMS)}) x {runs} run(s) = "
           f"{sessions} claude -p session(s)")
     print(f"spend cap ${budget:.2f} per session, ${budget * sessions:.2f} at most in total "
           "(an upper bound, not an estimate)")
-    corpus = len(list((STORY / "corpus" / "records" / "sessions").glob("*.json")))
-    print(f"story: {(STORY / 'repo.bundle').relative_to(ROOT)} at main, with {corpus} recorded sessions "
-          f"from {(STORY / 'corpus').relative_to(ROOT)}\n\ntasks:")
+    sessions = len(list((subject.store / "records" / "sessions").glob("*.json")))
+    print(f"subject: {rel(subject.dir)}\n  bundle: {rel(subject.bundle)} at {subject.branch}\n"
+          f"  store: {sessions} recorded sessions from {rel(subject.store)}\n  suite: {subject.suite}\n"
+          f"  setup: {subject.setup}\n  extra tools: {subject.tools or 'none'}\n\ntasks:")
     for t in tasks:
         print(f"  {t.id:22} {t.kind:8} {t.check}")
     print("\nper task, arm and run, in a fresh clone under one temporary directory:\n"
-          "  1. clone the bundle at main, its branches as local branches, no remote\n"
-          "  2. copy the corpus raw/ and records/ into the clone's store\n"
+          f"  1. clone the bundle at {subject.branch}, its branches as local branches, no remote"
+          + (", then .venv with uv" if subject.setup == "uv-venv" else "") + "\n"
+          "  2. copy the store's raw/ and records/ into the clone's store\n"
           "  3. set [retrieval] enabled (off: false, on: true), ctx init, commit\n"
           "  4. ctx rebuild: search index and code graph\n"
           "  5. claude -p with the task's prompt; end the session\n"
-          f"  6. copy the check in as {CHECK_FILE}; run it and the repository's tests\n"
+          f"  6. copy the check in as {CHECK_FILE}; run it and the suite ({subject.suite})\n"
           "  7. ctx --json --full stats session <id>\n"
-          f"report: {(BENCH / 'runs').relative_to(ROOT)}/<date>-<plugin version>.json and .md")
+          f"report: {rel(out)}/<date>-<plugin version>.json and .md")
     acc = Acc(Path("<tmp>"), None, model, budget, env, isolation(PLUGIN_ID))
-    print("\nclaude command, run in the clone, prompt on stdin:\n  " + shlex.join(acc.claude_cmd("<session-id>", False, BENCH_TOOLS)))
+    print("\nclaude command, run in the clone, prompt on stdin:\n  " + shlex.join(acc.claude_cmd("<session-id>", False, subject.tools_allowed)))
     print(f"\nadded to every prompt:\n  {UNATTENDED}")
 
 
@@ -391,7 +467,9 @@ def main(argv: list[str] | None = None) -> int:
                         help="run each check on the untouched story and with its solution; no claude call")
     parser.add_argument("--list", action="store_true", help="list the tasks and exit")
     parser.add_argument("--keep", action="store_true", help="keep the temporary directory")
-    parser.add_argument("--out", type=Path, default=BENCH / "runs", help="where the report goes (default: eval/bench/runs)")
+    parser.add_argument("--subject", type=Path, default=BENCH,
+                        help="folder with subject.toml, tasks.toml, checks/, solutions/ (default: eval/bench)")
+    parser.add_argument("--out", type=Path, help="where the report goes (default: <subject>/runs)")
     parser.add_argument("--model", help="model for the sessions (default: Claude Code's default)")
     parser.add_argument("--max-budget-usd", type=float, default=DEFAULT_BUDGET,
                         help=f"API spend cap per claude -p session (default {DEFAULT_BUDGET})")
@@ -400,12 +478,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.runs < 1:
         parser.error("--runs wants at least 1")
+    out = args.out or args.subject.resolve() / "runs"
     env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
            "GIT_TERMINAL_PROMPT": "0", "GIT_EDITOR": "true", "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
     try:
-        tasks = select(load_tasks(BENCH / "tasks.toml"), args.tasks)
-        check((STORY / "repo.bundle").is_file() and (STORY / "corpus" / "records").is_dir(),
-              f"no story bundle and corpus in {STORY}")
+        subject = load_subject(args.subject.resolve())
+        tasks = select(load_tasks(subject.dir / "tasks.toml"), args.tasks)
+        check(subject.bundle.is_file() and (subject.store / "records").is_dir(),
+              f"no bundle {subject.bundle} or store {subject.store}/records")
     except Fail as e:
         print(f"FAIL: {e}", file=sys.stderr)
         return 1
@@ -414,14 +494,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{t.id:22} {t.kind:8} {t.prompt}")
         return 0
     if args.dry_run:
-        print_plan(tasks, args.runs, args.max_budget_usd, args.model, env)
+        print_plan(subject, tasks, args.runs, args.max_budget_usd, args.model, env, out)
         print("\nnothing run")
         return 0
 
     tmp = Path(tempfile.mkdtemp(prefix="wscontext-bench-")).resolve()
     try:
         if args.verify_checks:
-            problems = verify_checks(Acc(tmp, None, None, 0, env), tasks)
+            problems = verify_checks(Acc(tmp, None, None, 0, env), subject, tasks)
             print(f"\n{len(tasks) - len({p.split(':')[0] for p in problems})} of {len(tasks)} checks behave; "
                   f"problems: {'; '.join(problems) or 'none'}")
             return 1 if problems else 0
@@ -440,7 +520,7 @@ def main(argv: list[str] | None = None) -> int:
                 for t in tasks:
                     for arm in ARMS:
                         started = time.monotonic()
-                        r = run_session(acc, t, arm, n)
+                        r = run_session(acc, subject, t, arm, n)
                         rows.append(r)
                         print(f"{len(rows):3}/{total_sessions} {t.id:22} {arm:3} run {n}: "
                               f"{'done    ' if r['done'] else 'not done'} turns {cell('turns', r.get('turns'))}, "
@@ -460,10 +540,10 @@ def main(argv: list[str] | None = None) -> int:
                     "plugin_version": acc.plugin.version, "plugin_root": str(acc.plugin.root),
                     "model": next((r["model"] for r in rows if r.get("model")), args.model),
                     "runs": args.runs, "tasks": [t.id for t in tasks], "arms": list(ARMS),
-                    "max_budget_usd": args.max_budget_usd, "story": str((STORY / "repo.bundle").relative_to(ROOT)),
+                    "max_budget_usd": args.max_budget_usd, "story": rel(subject.bundle),
                     "story_head": rows[0]["story_head"], "complete": complete}
             doc = report(rows, meta)
-            paths = write_report(doc, args.out)
+            paths = write_report(doc, out)
             both = doc["summary"]["total"]
             print("\n" + "\n".join(f"{arm}: {both[arm]['done']}/{both[arm]['runs']} done, "
                                    f"${cell('cost_usd', both[arm]['cost_usd'])}" for arm in ARMS))
