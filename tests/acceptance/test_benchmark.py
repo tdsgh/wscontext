@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import time
+import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -198,6 +199,23 @@ def test_a_session_runs_its_check_after_it_ends_and_records_the_figures(tmp_path
             found["search"], found["tokens"], found["seconds"]) == (True, None, 9, 0.31, 3, 1, 15, 25.0)
     claude = next(c for c in acc.calls if c[0] == "claude")
     assert claude[1] == bm.prompt(task) and claude[2] == bm.BENCH_TOOLS == STORY.tools_allowed
+
+
+@pytest.mark.parametrize("arm", bm.ARMS)
+def test_the_check_and_the_suite_see_the_subjects_own_retrieval_switch(tmp_path, monkeypatch, arm):
+    acc = SessionAcc(tmp_path, None, None, 1.0, ENV)
+    task = next(t for t in REAL_TASKS if t.id == "bar-width")
+    seen = []
+
+    def check_sees(acc, subject, repo, source):
+        seen.append(tomllib.loads((repo / ".wscontext" / "config.toml").read_text())["retrieval"]["enabled"])
+        return {"check": True, "suite": True, "done": True}
+
+    monkeypatch.setattr(bm, "run_check", check_sees)
+    found = bm.run_session(acc, STORY, task, arm, 1)
+    repo = tmp_path / f"{task.id}-{arm}-1"
+    own = tomllib.loads(run_git(repo, "show", "HEAD~1:.wscontext/config.toml"))["retrieval"]["enabled"]
+    assert seen == [own] and found["error"] is None
 
 
 def test_a_session_that_times_out_is_not_done_and_says_why(tmp_path):

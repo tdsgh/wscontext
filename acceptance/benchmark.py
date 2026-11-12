@@ -283,6 +283,12 @@ def run_session(acc: Acc, subject: Subject, task: Task, arm: str, n: int) -> dic
     if failed:  # the spend cap ends a session this way too
         row["error"] = f"claude reported an error ({row['result']})"
     row["error"] = ((row["error"] or "") + end_session(acc, repo, sid)).removeprefix("; ") or None
+    # the arm's switch is the runner's, not the task's: the check and the suite see the subject's own value
+    own = tomllib.loads(acc.git(repo, "show", f"{head}:.wscontext/config.toml"))["retrieval"]["enabled"]
+    try:
+        set_config(repo, "retrieval", "enabled", "true" if own else "false")
+    except Fail as e:
+        row["error"] = "; ".join(filter(None, [row["error"], f"arm switch not restored: {e}"]))
     row.update(run_check(acc, subject, repo, subject.dir / task.check))
     try:
         results = wait_for(lambda: (r := acc.ctx_json(repo, "--full", "stats", "session", sid)["results"])
