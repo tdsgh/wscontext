@@ -136,6 +136,22 @@ between two checkouts of one repository.
   repository is about 940 lines and holds its own decisions in a file. At
   Alpha the benchmark runs on this repository, with tasks that only past
   sessions or many files can answer, 3 runs per arm.
+- **Value result (2026-11-12, plugin 0.3.4):** 10 tasks, 3 runs per arm, 60
+  sessions. Both arms hold the same store of past sessions, so the off arm
+  can search the raw transcripts with grep.
+
+  | | off | on |
+  |---|---|---|
+  | Runs done, of 30 | 27 | 30 |
+  | Search-type tool calls (per-task means, summed over 10 tasks) | 60.3 | 56 |
+  | `ctx` calls (same) | 4 | 18.3 |
+  | Tokens (per-task means, summed over 9 tasks) | 7,041,200 | 6,909,840 |
+
+  The three failed runs in the off arm are all history tasks. One task is
+  left out of the token figure: four of its sessions hit the runner's
+  300-second limit (3 off, 1 on). Its check passed, so they count as done,
+  but Claude Code reported no turns, tokens or cost for them. The result is
+  not judged here. Any change it suggests goes into stage 4.
 - **Exit:** at least 30 real sessions with no hook failure and no blocked
   commit, and the benchmark result above. Defects found go into stage 4.
 - **Rust in the code graph:** a Rust language part, built after the sync test

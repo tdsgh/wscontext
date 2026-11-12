@@ -1,11 +1,16 @@
 # The on/off benchmark: acceptance/benchmark.py runs each [[task]] headless in a fresh clone of the
-# stage 2 story repository (eval/stage2/repo.bundle at main, with the eval/stage2/corpus sessions in
-# its store), once with wscontext retrieval on and once with it off. Fields:
+# subject's repository (subject.toml in this folder: here the stage 2 story repository,
+# eval/stage2/repo.bundle at main, with the eval/stage2/corpus sessions in its store), once with
+# wscontext retrieval on and once with it off. Another subject is another folder with the same
+# files: acceptance/benchmark.py --subject DIR. Fields:
 #   id      unique; names the check and the solution files
 #   kind    where | impact | history: what the task needs to know (documentation and report grouping)
 #   prompt  what the session is asked to do; the runner adds that the run is unattended and not to commit
-#   check   a stdlib unittest file under eval/bench/, copied to the repository root only after the
-#           session ends; the task is done when it passes and the repository's own tests still pass
+#   check   a stdlib unittest file under the subject's folder, copied to the repository root only
+#           after the session ends; the task is done when it passes and the subject's own tests
+#           still pass
+#   absent  optional; history tasks: strings of the answer. --verify-checks fails when one is in the
+#           subject's tracked files or commit messages
 # Each task has a known-good change in solutions/<id>.patch, used only by --verify-checks.
 
 [[task]]

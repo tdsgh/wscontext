@@ -101,7 +101,8 @@ The benchmark compares retrieval off and on over ten tasks. It spends API usage.
     .venv/bin/python acceptance/benchmark.py --verify-checks  # offline
     .venv/bin/python acceptance/benchmark.py [--runs N] [--max-budget-usd X]
 
-Tasks and reports are in `eval/bench/`.
+Each command takes `--subject DIR`, a folder with the tasks, checks and
+reports. The default subject is `eval/bench/`.
 ## Retention
 
 Raw transcripts older than `retention.raw_days` (default 180) are removed from

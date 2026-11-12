@@ -164,9 +164,10 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
 - **Eval.** `ctx eval` scores search on a fixed corpus in `eval/stage2/`: the
   sessions, the questions, and a Git bundle of the repository the scripted
   sessions worked in. `acceptance/record_corpus.py` recorded the corpus once.
-- **Benchmark.** `acceptance/benchmark.py` runs the tasks in `eval/bench/`
-  headless, with retrieval off and on (→ ADR-043). It is not part of the
-  offline suite.
+- **Benchmark.** `acceptance/benchmark.py` runs the tasks of one subject
+  folder headless, with retrieval off and on (→ ADR-043, ADR-047). The
+  default subject is `eval/bench/`; `--subject DIR` picks another. It is not
+  part of the offline suite.
 
 ### Code graph
 
@@ -277,7 +278,7 @@ Every record carries a schema version and the Git author who produced it.
 | Session brief | `SessionStart` context from prior work (→ ADR-012, ADR-035) | `src/wscontext/capture/brief.py` | 2 |
 | Eval | `ctx eval`, which scores search on the recorded corpus, and the script that records the corpus | `src/wscontext/cli/eval.py`, `eval/`, `acceptance/record_corpus.py` | 2 |
 | Code graph | tree-sitter definitions, imports, calls, co-change and session links, incremental by content hash (→ ADR-014); language parts under `graph/languages/` (→ ADR-038); graph worker (→ ADR-039) | `src/wscontext/graph/` | 3 |
-| Benchmark | The on/off task set and its runner (→ ADR-043) | `eval/bench/`, `acceptance/benchmark.py` | 3 |
+| Benchmark | The on/off task set and its runner (→ ADR-043, ADR-047) | `eval/bench/`, `acceptance/benchmark.py` | 3 |
 | Distiller | Async LLM extraction of decision records (→ ADR-015) | `src/wscontext/distill/` (planned) | 4 |
 | Plugin package | Marketplace and plugin manifests, `hooks/hooks.json`, `bin/ctx`, `bin/ctx.cmd`, stable launcher, skills (→ ADR-017) | repo root: `.claude-plugin/`, `hooks/`, `bin/`, `skills/` | 1 |
 

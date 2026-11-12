@@ -720,6 +720,9 @@ task headless in a fresh clone of the stage 2 story repository, once with
 - The stage gate requires the run to finish end to end. The value judgement
   moves to Alpha.
 
+Superseded in part by ADR-047 for the subject: the runner takes a subject
+folder, and the story repository is one such subject. The rest stands.
+
 ### ADR-044 — The retrieval switch also turns off `ctx code` and `ctx impact`
 
 **Decision.** With `[retrieval] enabled = false`, `ctx code` and `ctx impact`
@@ -775,3 +778,32 @@ Claude Code's account file, `~/.claude.json`
 
 **Guardrail.** The IDs are not a `[redaction]` setting; the config file is
 committed.
+
+### ADR-047 — The benchmark takes a subject folder; the Alpha subject is local only
+
+**Decision.** `acceptance/benchmark.py` runs the tasks of one subject folder,
+chosen with `--subject` (default `eval/bench`). The folder holds
+`subject.toml`, `tasks.toml`, `checks/`, `solutions/` and `runs/`
+(acceptance/benchmark.py:83-112, 477-479). `eval/bench/` is the story subject
+and is committed. `eval/alpha/` is the Alpha subject: a bundle of this
+repository and a copy of its session store, cut by
+`acceptance/snapshot_subject.py`. It is gitignored. This supersedes ADR-043 in
+part, for the subject.
+
+**Implications.**
+- `subject.toml` names the bundle, branch, store, the suite command, the setup
+  (`none` or `uv-venv`) and optional extra tools. The runner reads the clone,
+  the suite and the tools from it.
+- Both arms start from the same store copy. The off arm can search the raw
+  transcripts.
+- The check and the suite see the subject's own retrieval switch, not the
+  arm's (acceptance/benchmark.py:286-292).
+- A task may list `absent` strings. `--verify-checks` fails when one is in the
+  subject's tracked files or commit messages.
+- The reports go to `<subject>/runs` unless `--out` is given.
+- Only the runner code, the story subject and the roadmap's result figures
+  are committed. The Alpha tasks, checks, solutions, bundle, store and reports
+  are not, because they are built from session history.
+
+**Guardrail.** `eval/alpha/` stays out of Git; its absence from a fresh clone
+is intended.

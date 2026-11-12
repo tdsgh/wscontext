@@ -1,29 +1,35 @@
-"""The on/off benchmark of docs/wscontext-phase-3.md §11: each task headless, with wscontext retrieval off and on.
+"""The on/off benchmark of docs/wscontext-phase-3.md §11: each task of a subject folder headless, with wscontext retrieval off and on.
 
-    .venv/bin/python acceptance/benchmark.py [--runs N] [--tasks a,b] [--max-budget-usd X] [--keep]
-    .venv/bin/python acceptance/benchmark.py --dry-run [--runs N] [--tasks a,b]
-    .venv/bin/python acceptance/benchmark.py --verify-checks [--tasks a,b]
-    .venv/bin/python acceptance/benchmark.py --list
+    .venv/bin/python acceptance/benchmark.py [--subject DIR] [--runs N] [--tasks a,b] [--max-budget-usd X] [--keep]
+    .venv/bin/python acceptance/benchmark.py [--subject DIR] --dry-run [--runs N] [--tasks a,b]
+    .venv/bin/python acceptance/benchmark.py [--subject DIR] --verify-checks [--tasks a,b]
+    .venv/bin/python acceptance/benchmark.py [--subject DIR] --list
 
-Not part of the offline suite (pytest never collects `acceptance/`). Plays eval/bench/tasks.toml:
+`--subject DIR` is a folder with subject.toml, tasks.toml, checks/ and solutions/ (default eval/bench,
+the story). A subject can also be cut from a repository with acceptance/snapshot_subject.py.
+
+Not part of the offline suite (pytest never collects `acceptance/`). Plays the subject's tasks.toml:
 per run, per task, first with `[retrieval] enabled = false` and then with `true`, one `claude -p`
-session in a fresh throwaway clone of the stage 2 story repository (eval/stage2/repo.bundle at
-main) whose store holds the recorded corpus (eval/stage2/corpus). Before the session it runs
-`ctx init`, commits the arm's switch and runs `ctx rebuild`, so both arms start from a built index
-and graph. After the session ends it copies the task's check in and runs it with the repository's
-own tests; the task is done when both pass. Figures come from `ctx stats session` in that clone and
-from claude's own result line (turns, cost). Writes eval/bench/runs/<date>-<plugin version>.json
-and .md.
+session in a fresh throwaway clone of the subject's bundle at its branch, whose store holds the
+subject's recorded sessions. The default subject, eval/bench, is the stage 2 story repository
+(eval/stage2/repo.bundle at main, corpus eval/stage2/corpus). Both arms hold the same store.
+Before the session it runs `ctx init`, commits the arm's switch and runs `ctx rebuild`, so both
+arms start from a built index and graph. After the session ends it copies the task's check in and
+runs it with the subject's own suite (subject.toml); the task is done when both pass. Figures come
+from `ctx stats session` in that clone and from claude's own result line (turns, cost). Writes
+<subject>/runs/<date>-<plugin version>.json and .md, or into --out.
 
-Spends API usage: one session per task, per arm, per run (10 tasks x 2 arms = 20 sessions by
-default), each capped by --max-budget-usd. `--dry-run`, `--list` and `--verify-checks` make no
-claude call: `--dry-run` validates the tasks and prints the plan; `--verify-checks` runs each check
-against the untouched story (it must fail) and with eval/bench/solutions/<task>.patch applied (it
-must pass), offline, without the plugin.
+Spends API usage: one session per task, per arm, per run (10 tasks x 2 arms = 20 sessions per run
+for the default subject), each capped by --max-budget-usd. `--dry-run`, `--list` and
+`--verify-checks` make no claude call: `--dry-run` validates the tasks and prints the plan;
+`--verify-checks` runs each check against the untouched subject (it must fail) and with
+<subject>/solutions/<task>.patch applied (it must pass), and fails when a task's `absent` string is
+in the subject's tracked files or commit log, offline, without the plugin.
 
-The sessions use the corpus recorder's isolation: no user settings, CLAUDE.md, rules, auto memory
-or MCP servers; only the wscontext plugin is enabled. `ctx` runs through the installed plugin's
-launcher, as in the acceptance runs, and only ever inside the temporary directory.
+The sessions use the corpus recorder's isolation: no user settings, user CLAUDE.md or rules, auto
+memory or MCP servers; only the wscontext plugin is enabled. The subject's own project settings,
+CLAUDE.md and rules load (`--setting-sources project,local`). `ctx` runs through the installed
+plugin's launcher, as in the acceptance runs, and only ever inside the temporary directory.
 """
 
 import argparse
