@@ -1,6 +1,7 @@
 """Cut a benchmark subject from a repository: a bundle at one commit and the store as it stood then.
 
-    .venv/bin/python acceptance/snapshot_subject.py REPO --commit SHA --before-session ID --out DIR [--branch master]
+    .venv/bin/python acceptance/snapshot_subject.py REPO --commit SHA --before-session ID --out DIR
+        [--branch master] [--deselect NODE ...]
 
 Writes, into a new or empty DIR:
 
@@ -11,7 +12,7 @@ Writes, into a new or empty DIR:
   from SHA. Copied as stored; they passed the redactor when captured. A kept checkpoint names only
   kept sessions; one left with none is left out. A session that started before the cut and has an
   entry at or after it stops the snapshot with an error naming it. `ended_at` plays no part.
-- `subject.toml`, for `benchmark.py --subject DIR`.
+- `subject.toml`, for `benchmark.py --subject DIR`. Its suite leaves out each `--deselect` test.
 
 Only reads REPO and its store. Prints the session and checkpoint counts kept and left out. Not part
 of the offline suite (pytest never collects `acceptance/`).
@@ -19,6 +20,7 @@ of the offline suite (pytest never collects `acceptance/`).
 
 import argparse
 import json
+import shlex
 import shutil
 import sys
 import tempfile
@@ -35,7 +37,7 @@ SUBJECT_TOML = """\
 bundle = "repo.bundle"
 branch = "{branch}"
 store = "store"
-suite = ".venv/bin/pytest -q -x"
+suite = {suite}
 setup = "uv-venv"
 tools = "Bash(.venv/bin/pytest:*)"
 """
@@ -140,6 +142,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="keep the sessions that started before this one and have no entry at or after its start (an ID prefix works)")
     parser.add_argument("--out", type=Path, required=True, help="a new or empty folder")
     parser.add_argument("--branch", default="master")
+    parser.add_argument("--deselect", action="append", default=[], metavar="NODE",
+                        help="a test the subject's suite leaves out; repeatable")
     args = parser.parse_args(argv)
     if args.out.exists() and any(args.out.iterdir()):
         sys.exit(f"{args.out} is not empty")
@@ -156,7 +160,9 @@ def main(argv: list[str] | None = None) -> int:
     make_bundle(store.root, sha, args.branch, args.out / "repo.bundle")
     raw_files = copy_sessions(store, kept, args.out / "store")
     taken, dropped = copy_checkpoints(store, reachable, kept, args.out / "store")
-    (args.out / "subject.toml").write_text(SUBJECT_TOML.format(branch=args.branch), encoding="utf-8")
+    suite = shlex.join([".venv/bin/pytest", "-q", "-x", *(a for n in args.deselect for a in ("--deselect", n))])
+    (args.out / "subject.toml").write_text(SUBJECT_TOML.format(branch=args.branch, suite=json.dumps(suite)),
+                                           encoding="utf-8")
     print(f"snapshot of {args.branch} at {sha[:12]} in {args.out}\n"
           f"  sessions:    {len(kept)} kept ({raw_files} raw files), {len(left)} left out\n"
           f"  checkpoints: {taken} kept, {dropped} left out")

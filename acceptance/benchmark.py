@@ -178,7 +178,8 @@ def clone_subject(acc: Acc, subject: Subject, repo: Path) -> None:
         # its own throwaway venv, never the repository's; kept out of the commits
         with (repo / ".git" / "info" / "exclude").open("a", encoding="utf-8") as f:
             f.write("/.venv/\n")
-        for cmd in (["uv", "venv", "-q", ".venv"],
+        # the runner's own interpreter, never whatever Python uv would find on PATH
+        for cmd in (["uv", "venv", "-q", "--python", sys.executable, ".venv"],
                     ["uv", "pip", "install", "-q", "--python", str(Path(".venv", "bin", "python")), "-e", ".", "--group", "dev"]):
             done = acc.run(cmd, repo, timeout=600, env={"VIRTUAL_ENV": ""})
             check(done.returncode == 0, f"{' '.join(cmd[:3])} failed in the clone: {(done.stdout + done.stderr).strip()[-400:]}")

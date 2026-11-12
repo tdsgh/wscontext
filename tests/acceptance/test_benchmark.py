@@ -381,6 +381,7 @@ def test_the_uv_venv_setup_builds_a_venv_in_the_clone_and_keeps_it_out_of_the_co
     repo = tmp_path / "clone"
     bm.clone_subject(acc, bm.Subject(STORY.dir, STORY.bundle, "main", STORY.store, STORY.suite, "uv-venv", ""), repo)
     assert [c[0][:3] for c in ran] == [["uv", "venv", "-q"], ["uv", "pip", "install"]]
+    assert ran[0][0][3:5] == ["--python", sys.executable]
     assert all(cwd == repo for _, cwd in ran) and "-e" in ran[1][0] and "dev" in ran[1][0]
     (repo / ".venv").mkdir()
     (repo / ".venv" / "x").write_text("")

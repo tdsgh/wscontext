@@ -1,6 +1,7 @@
 """The benchmark snapshot: the sessions and checkpoints before a cut, and a bundle at the cut commit."""
 
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -125,6 +126,15 @@ def test_the_subject_loads_with_the_runners_loader(world, tmp_path):
     assert subject.bundle.is_file() and (subject.store / "records").is_dir() and (subject.store / "raw").is_dir()
     assert (subject.suite, subject.setup, subject.tools) == (".venv/bin/pytest -q -x", "uv-venv", "Bash(.venv/bin/pytest:*)")
     assert subject.branch == "main"
+
+
+def test_each_deselected_test_is_left_out_of_the_subjects_suite(world, tmp_path):
+    repo, _, cut, _ = world
+    ss.main([str(repo), "--commit", cut, "--before-session", "s-cut", "--out", str(tmp_path / "out"),
+             "--branch", "main", "--deselect", "tests/a.py::t", "--deselect", "tests/b.py::u[x y]"])
+    suite = bm.load_subject(tmp_path / "out").suite
+    assert shlex.split(suite) == [".venv/bin/pytest", "-q", "-x",
+                                  "--deselect", "tests/a.py::t", "--deselect", "tests/b.py::u[x y]"]
 
 
 def test_a_session_prefix_must_match_one_session_and_a_used_folder_is_refused(world, tmp_path):
