@@ -62,7 +62,8 @@ def session_start(store: StorePaths, config: Config, payload: dict) -> str | Non
     return text
 
 
-def user_prompt_submit(store: StorePaths, config: Config, payload: dict) -> None:
+def user_prompt_submit(store: StorePaths, config: Config, payload: dict) -> str | None:
+    """Returns the prompt brief for the hook output on a session's first prompt, or None."""
     sid = payload["session_id"]
     key = worktree_key(store, config)
     sessions = read_json(active_path(store)).get(key)
@@ -74,7 +75,28 @@ def user_prompt_submit(store: StorePaths, config: Config, payload: dict) -> None
     def start(d: dict) -> None:
         d.setdefault("turns", []).append({"started_at": now_iso(), "ended_at": None})
 
+    first = not read_json(turn_state_path(store, sid)).get("turns")
+    if first:
+        try:
+            first = not read_session(store, sid).turns  # a continued session had its brief
+        except (OSError, RecordError):
+            pass
+    prompt = payload.get("prompt")
+    result = None
+    if first and isinstance(prompt, str) and prompt:
+        try:
+            result = brief.build_prompt(store, config, sid, prompt)
+        except Exception:
+            pass  # no prompt brief; the turn is still recorded
     _update_state(store, config, payload, start)
+    if result:
+        text, sessions = result
+        _update_state(store, config, payload, lambda d: d.update(
+            prompt_brief_tokens=d.get("prompt_brief_tokens", 0) + estimate_tokens(text),
+            prompt_brief_sessions=list(dict.fromkeys([*d.get("prompt_brief_sessions", []),
+                                                      *sessions]))))
+        return text
+    return None
 
 
 def post_tool_use(store: StorePaths, config: Config, payload: dict) -> None:

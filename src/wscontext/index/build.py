@@ -13,10 +13,10 @@ from collections.abc import Callable
 from pathlib import Path
 
 from wscontext.adapters.base import Turn
-from wscontext.adapters.claude_code import ClaudeCodeAdapter
+from wscontext.adapters.claude_code import ClaudeCodeAdapter, prompt_without_wrappers
 from wscontext.gitutil import GitError, git
 from wscontext.history import branch as history
-from wscontext.index.db import connect, db_path
+from wscontext.index.db import EXCHANGE_KEYS, EXCHANGE_STATS, connect, db_path
 from wscontext.store.locks import FileLock, LockTimeout
 from wscontext.store.paths import StorePaths, is_safe_name
 from wscontext.store.records import (RecordError, read_checkpoint, read_session)
@@ -96,9 +96,9 @@ def _parse(data: bytes, sidechain: bool):
 
 def _title(turns: list[Turn]) -> str:
     for t in turns:
-        first = next((i.text for i in t.items if i.kind == "prompt"), "").strip()
+        first = prompt_without_wrappers(next((i.text for i in t.items if i.kind == "prompt"), ""))
         if first:
-            return " ".join(first.split())[:TITLE_CHARS]
+            return first[:TITLE_CHARS]
     return ""
 
 
@@ -356,6 +356,11 @@ def _work(store: StorePaths, session_id: str | None, result: dict) -> None:
         result.update(commits_indexed=indexed, commits_removed=removed, pending_commits=pending)
         result["lag"] += pending
         _link(conn)
+        if result["sessions_indexed"] or result["sessions_removed"] or not conn.execute(
+                "SELECT 1 FROM meta WHERE key=?", (EXCHANGE_KEYS[0],)).fetchone():
+            stats = conn.execute(EXCHANGE_STATS).fetchone()
+            conn.executemany("INSERT OR REPLACE INTO meta VALUES(?, ?)",
+                             [(k, str(v)) for k, v in zip(EXCHANGE_KEYS, stats)])
     finally:
         conn.close()
 

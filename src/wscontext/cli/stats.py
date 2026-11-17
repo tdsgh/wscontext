@@ -39,7 +39,8 @@ def run(args, store: StorePaths, config: Config) -> Reply:
         calls = queries.join_calls(store, since)
         sessions = data.window_sessions(store, since)
         summary = queries.summarize(calls, queries.ctx_first(store, sessions),
-                                    queries.adoption(sessions))
+                                    queries.adoption(sessions),
+                                    queries.prompt_follow_through(sessions))
         blocks = views.queries_blocks(summary, calls,
                                       len(calls) if args.full else args.limit or DEFAULT_CALLS)
     else:

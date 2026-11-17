@@ -227,3 +227,75 @@ def test_calls_log_result_counts_and_freshness_flags(world, capsys):
     rows = [json.loads(x) for x in (world.store.logs / "ctx-calls.jsonl").read_text().splitlines()]
     assert (rows[0]["results"], rows[0]["flags"]) == (2, ["uncommitted"])
     assert (rows[1]["results"], rows[1]["flags"]) == (1, [])
+
+
+def test_hook_row_with_a_redirection_joins_its_cli_row(world, capsys):
+    now = stamp()
+    log(world.store, "ctx-calls.jsonl",
+        {"ts": now, "source": "cli", "argv": ["find", "a", "b"], "exit": 0, "ms": 50,
+         "output_bytes": 400, "results": 3, "flags": []},
+        {"ts": stamp(seconds_ago=1), "source": "hook", "session_id": "sess-one",
+         "argv": ["find", "a", "b", "2>/dev/null"]},
+        {"ts": now, "source": "cli", "argv": ["find", "c"], "exit": 0, "ms": 50,
+         "output_bytes": 400, "results": 1, "flags": []},
+        {"ts": now, "source": "hook", "session_id": "sess-one", "argv": ["find", "c", "2>"]})
+    calls = stats(world, capsys, "queries")[1]["calls"]
+    assert [(c["query"], c["session_id"], c["results"]) for c in calls] == [
+        ("a b", "sess-one", 3), ("c", "sess-one", 1)]
+
+
+def test_sessions_without_a_transcript_are_never_prompted(world, capsys):
+    write_session(world.store, SessionRecord(
+        session_id="sess-empty", author="t@example.com", started_at="2026-01-01T10:00:00Z"),
+        Config())
+    write_session(world.store, SessionRecord(
+        session_id="sess-calls", author="t@example.com", started_at="2026-01-01T10:00:00Z",
+        tool_calls={"read": 1}), Config())  # no turns, no stored bytes, but tool calls
+    q = stats(world, capsys, "queries")[0]
+    assert q["adoption"]["sessions"] == 2 and q["adoption"]["never_prompted"] == 1
+    assert [w["sessions"] for w in q["adoption"]["by_week"]] == [2]
+    _, out, _ = world.ctx(capsys, "stats", "queries")
+    assert "sessions never prompted: 1" in out
+
+
+def _prompted(world, sid, tokens=None, named=None, ctx=None, calls=None):
+    write_session(world.store, SessionRecord(
+        session_id=sid, author="t@example.com", started_at=stamp(), tool_calls={"read": 1},
+        ctx_calls=ctx or {}, prompt_brief_tokens=tokens, prompt_brief_sessions=named), Config())
+
+
+def test_data_view_reports_the_prompt_brief(world, capsys):
+    _prompted(world, "p-one", 120, ["sess-one"])
+    _prompted(world, "p-two", 80, ["sess-one"])
+    _prompted(world, "p-none")  # prompted, no prompt brief
+    write_session(world.store, SessionRecord(  # never prompted: not in the denominator
+        session_id="p-empty", author="t@example.com", started_at=stamp()), Config())
+    r = stats(world, capsys, "data")[-1]["retrieval"]
+    # sess-one, from the fixture, has turns, so 4 sessions have a transcript
+    assert (r["sessions_with_prompt_brief"], r["prompt_brief_tokens"]) == (2, 200)
+    assert r["prompt_brief_share"] == 0.5
+    _, out, _ = world.ctx(capsys, "stats", "data")
+    assert "prompt brief: on; sessions given one: 2 (50% of sessions with a transcript); " \
+           "prompt brief tokens given: 200" in out
+
+
+def test_queries_view_reports_prompt_brief_follow_through(world, capsys):
+    _prompted(world, "f-show", 100, ["a"], ctx={"show": 1})
+    _prompted(world, "f-find", 100, ["a"], ctx={"find": 2})
+    _prompted(world, "f-why", 100, ["a"], ctx={"why": 1})  # why is not a follow-up
+    _prompted(world, "f-nobrief", None, ctx={"find": 1})  # no prompt brief: not counted
+    p = stats(world, capsys, "queries")[0]["prompt_brief"]
+    assert p == {"sessions_given": 3, "followed": 2, "share": 2 / 3}
+    _, out, _ = world.ctx(capsys, "stats", "queries")
+    assert "that then ran ctx show or ctx find: 2 of 3 (67%)" in out
+
+
+def test_session_view_reports_the_prompt_brief(world, capsys):
+    _prompted(world, "s-given", 150, ["sess-one", "sess-two"])
+    _prompted(world, "s-none", 0)
+    r = stats(world, capsys, "session", "s-given")[0]
+    assert (r["prompt_brief_tokens"], r["prompt_brief_sessions"]) == (150, ["sess-one", "sess-two"])
+    _, out, _ = world.ctx(capsys, "stats", "session", "s-given")
+    assert "prompt brief: 150 tokens, named sess-one, sess-two" in out
+    assert "prompt brief: none given" in world.ctx(capsys, "stats", "session", "s-none")[1]
+    assert "prompt brief: not recorded" in world.ctx(capsys, "stats", "session", "sess-one")[1]

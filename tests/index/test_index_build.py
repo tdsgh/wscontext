@@ -264,3 +264,47 @@ def test_brief_rows(store):
     assert full["files"] == []
     assert brief_rows(conn, None, [], exclude="s1") == {"recent": [], "files": []}
     conn.close()
+
+
+IDE = "<ide_opened_file>The user opened the file /w/src/uploader.py in the IDE.</ide_opened_file>"
+COMMAND = ("<command-message>kit:run-build-plan</command-message>\n"
+           "<command-name>/kit:run-build-plan</command-name>\n"
+           "<command-args>docs/build-plan-x.md WP3</command-args>")
+
+
+def titles(store):
+    return [r[0] for r in rows(store, "SELECT title FROM sessions ORDER BY session_id")]
+
+
+def test_titles_skip_wrapper_tags(store):
+    add_session(store, "s1", [(f"{IDE}\nfix the uploader retry", "ok", "")])
+    add_session(store, "s2", [(IDE, "ok", ""), ("now add a backoff", "done", "")])
+    add_session(store, "s3", [(COMMAND, "ok", "")])
+    add_session(store, "s4", [("fix <system-reminder>noise\nmore</system-reminder> the cache", "", "")])
+    add_session(store, "s5", [("plain prompt here", "ok", "")])
+    refresh(store)
+    assert titles(store) == ["fix the uploader retry", "now add a backoff",
+                             "/kit:run-build-plan docs/build-plan-x.md WP3",
+                             "fix the cache", "plain prompt here"]
+
+
+def test_indexed_text_keeps_removed_tag_text(store):
+    add_session(store, "s1", [(f"{IDE}\nfix the uploader retry", "ok", "")])
+    refresh(store)
+    conn = connect(store, readonly=True)
+    try:
+        assert [h.ref for h in search(conn, "uploader.py")] == ["s1"]
+    finally:
+        conn.close()
+
+
+def test_index_from_before_the_change_gets_new_titles(store):
+    add_session(store, "s1", [(f"{IDE}\nfix the uploader retry", "ok", "")])
+    refresh(store)
+    conn = sqlite3.connect(db_path(store))
+    conn.execute("UPDATE meta SET value=?", (str(SCHEMA_VERSION - 1),))
+    conn.execute("UPDATE sessions SET title='The user opened the file /w/src/uploader.py'")
+    conn.commit()
+    conn.close()
+    refresh(store)
+    assert titles(store) == ["fix the uploader retry"]

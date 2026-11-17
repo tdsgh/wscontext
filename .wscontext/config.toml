@@ -23,6 +23,7 @@ max_bytes = 1048576
 [retrieval]
 enabled = true
 brief = true
+prompt_brief = true
 
 [store]
 session_warn_bytes = 10485760

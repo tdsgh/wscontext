@@ -48,6 +48,8 @@ class RetrievalConfig:
     # off turns the brief and `ctx find` off together
     enabled: bool = True
     brief: bool = True
+    # the first prompt of a session gets a brief of related past sessions; enabled = false overrides
+    prompt_brief: bool = True
 
 
 @dataclass(frozen=True)

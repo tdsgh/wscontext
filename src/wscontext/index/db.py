@@ -5,7 +5,13 @@ from pathlib import Path
 
 from wscontext.store.paths import StorePaths
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3  # 3: session titles skip Claude Code's wrapper tags
+
+# exchanges indexed and the characters their prompts and replies hold; kept in `meta` under
+# EXCHANGE_KEYS by every refresh that changes a session, read by the prompt brief
+EXCHANGE_STATS = ("SELECT count(*), COALESCE(sum(length(prompt) + length(reply)), 0) "
+                  "FROM docs_fts WHERE kind='session'")
+EXCHANGE_KEYS = ("exchanges", "exchange_chars")
 
 _SCHEMA = """
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);

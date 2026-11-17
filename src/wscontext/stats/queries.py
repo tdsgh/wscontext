@@ -2,10 +2,10 @@
 
 from datetime import datetime
 
-from wscontext.capture.kinds import ctx_invocations, tool_kind
+from wscontext.capture.kinds import ctx_invocations, drop_redirections, tool_kind
 from wscontext.cli.data import parse_time, transcript_turns
 from wscontext.logs import CTX_CALLS_LOG
-from wscontext.stats.data import week_of, percentile, read_log
+from wscontext.stats.data import has_transcript, week_of, percentile, read_log
 from wscontext.store.paths import StorePaths
 from wscontext.store.records import SessionRecord
 
@@ -15,7 +15,7 @@ JOIN_WINDOW_SECONDS = 60
 
 def _key(argv: list[str]) -> str:
     """argv with shell quoting dropped: the hook side only sees the command text, split on spaces."""
-    return " ".join(" ".join(argv).replace('"', "").replace("'", "").split())
+    return " ".join(drop_redirections(" ".join(argv).replace('"', "").replace("'", "").split()))
 
 
 def _seconds(row: dict) -> float:
@@ -81,7 +81,7 @@ def first_tool(store: StorePaths, rec: SessionRecord) -> str | None:
 
 
 def ctx_first(store: StorePaths, sessions: list[SessionRecord]) -> dict:
-    firsts = {r.session_id: first_call(store, r) for r in sessions}
+    firsts = {r.session_id: first_call(store, r) for r in sessions if has_transcript(r)}
     considered = [k for k, _ in firsts.values() if k is not None]
     first = sum(k == "ctx" for k in considered)
     graph_first = sum(sub in {"code", "impact"} for _, sub in firsts.values())
@@ -92,8 +92,12 @@ def ctx_first(store: StorePaths, sessions: list[SessionRecord]) -> dict:
             "first_tool": {sid: k for sid, (k, _) in firsts.items()}}
 
 
-def adoption(sessions: list[SessionRecord]) -> dict:
-    """Sessions that called `ctx` at all and `ctx find`, overall and by week of the start."""
+def adoption(all_sessions: list[SessionRecord]) -> dict:
+    """Sessions that called `ctx` at all and `ctx find`, overall and by week of the start.
+
+    Only sessions with a transcript count; the others are reported as never prompted.
+    """
+    sessions = [r for r in all_sessions if has_transcript(r)]
     def row(group: list[SessionRecord]) -> dict:
         return {"sessions": len(group), "with_ctx": sum(bool(sum(r.ctx_calls.values())) for r in group),
                 "with_find": sum(bool(r.ctx_calls.get("find")) for r in group)}
@@ -106,13 +110,26 @@ def adoption(sessions: list[SessionRecord]) -> dict:
     graph = {"with_code": sum(bool(r.ctx_calls.get("code")) for r in sessions),
              "with_impact": sum(bool(r.ctx_calls.get("impact")) for r in sessions),
              "with_why_name": sum(bool(r.ctx_calls.get("why#name")) for r in sessions)}
-    return {**total, **graph,
+    return {**total, **graph, "never_prompted": len(all_sessions) - len(sessions),
             **{f"{k}_share": v / len(sessions) if sessions else None for k, v in graph.items()}, "with_ctx_share": total["with_ctx"] / len(sessions) if sessions else None,
             "with_find_share": total["with_find"] / len(sessions) if sessions else None,
             "by_week": [{"week": w, **row(weeks[w])} for w in sorted(weeks)]}
 
 
-def summarize(calls: list[dict], first: dict, adopted: dict) -> dict:
+def prompt_follow_through(sessions: list[SessionRecord]) -> dict:
+    """Of the prompted sessions given a prompt brief, those that then ran `ctx show` or `ctx find`.
+
+    The prompt brief comes on the first prompt, so any such call in the session is after it. The
+    record's own `ctx_calls` decide: they cover every session, where the call log is windowed,
+    rotated and joined by a time guess.
+    """
+    given = [r for r in sessions if has_transcript(r) and r.prompt_brief_tokens]
+    followed = sum(bool(r.ctx_calls.get("show") or r.ctx_calls.get("find")) for r in given)
+    return {"sessions_given": len(given), "followed": followed,
+            "share": followed / len(given) if given else None}
+
+
+def summarize(calls: list[dict], first: dict, adopted: dict, prompt_brief: dict) -> dict:
     by_command: dict[str, int] = {}
     flags: dict[str, int] = {}
     for c in calls:
@@ -129,4 +146,4 @@ def summarize(calls: list[dict], first: dict, adopted: dict) -> dict:
             "sessions_considered": first["sessions_considered"],
             "ctx_first": first["ctx_first"], "ctx_first_share": first["ctx_first_share"],
             "graph_first": first["graph_first"], "graph_first_share": first["graph_first_share"],
-            "adoption": adopted}
+            "adoption": adopted, "prompt_brief": prompt_brief}

@@ -76,6 +76,34 @@ def test_eval_without_a_corpus_is_an_error(world, capsys):
     assert code == 1 and "no corpus" in err
 
 
+def test_eval_scores_prompts_against_the_prompt_brief(world, capsys, tmp_path):
+    questions = tmp_path / "q.toml"
+    questions.write_text(
+        '[[question]]\ntext = "sqlite journal mode"\nexpect = "eval-sess-c"\n\n'
+        '[[prompt]]\ntext = "Add a dark theme to the settings screen"\n\n'
+        '[[prompt]]\ntext = "Pick a journal mode for sqlite"\nexpect = "eval-sess-c"\n')
+    args = ["eval", "--corpus", str(EVAL / "corpus"), "--questions", str(questions)]
+    code, out, _ = world.ctx(capsys, *args)
+    assert code == 0 and "1 of 1 expected answers in the top 3" in out
+    assert "prompt brief: 0 of 1 prompts name the expected session; 1 of 1 unrelated prompts" in out
+    data = run_json(world, capsys, *args)
+    summary, _, unrelated, related = data["results"]
+    assert (summary["prompts_found"], summary["prompts_related"]) == (0, 1)
+    assert (summary["prompts_quiet"], summary["prompts_unrelated"]) == (1, 1)
+    assert unrelated["type"] == "prompt" and unrelated["expected"] is None and unrelated["named"] == []
+    assert related["expected"] == "eval-sess-c" and related["rank"] is None
+
+
+def test_eval_on_the_stage2_set_stays_at_its_scores(world, capsys):
+    stage2 = Path(__file__).resolve().parents[2] / "eval" / "stage2"
+    data = run_json(world, capsys, "eval", "--corpus", str(stage2 / "corpus"),
+                    "--questions", str(stage2 / "questions.toml"))
+    summary = data["results"][0]
+    assert summary["top3"] == summary["questions"] == 20
+    assert summary["prompts_related"] == 8 and summary["prompts_found"] >= 5
+    assert summary["prompts_quiet"] == summary["prompts_unrelated"] == 3
+
+
 def _corpus_with_bundle(world, tmp_path, bundle: bool) -> tuple[Path, Path]:
     """The world's session and c1's checkpoint as a corpus; c1 lives only in the bundle."""
     checkpoint(world.store, world.c1, ["sess-one"])

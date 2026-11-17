@@ -2,7 +2,9 @@
 
 The corpus is indexed into a temporary store; the repository's own store is never touched. A
 `repo.bundle` beside the corpus is cloned into that store first, so linked commit messages are
-indexed and questions whose answer is a commit can be scored.
+indexed and questions whose answer is a commit can be scored. `[[prompt]]` tables, when present,
+are scored against the prompt brief instead: the expected session must be among the sessions it
+names, and a prompt without `expect` must get none.
 """
 
 import json
@@ -16,7 +18,7 @@ from wscontext.config import Config
 from wscontext.gitutil import GitError, git
 from wscontext.index import build
 from wscontext.index.db import connect
-from wscontext.index.search import search
+from wscontext.index.search import prompt_hits, search
 from wscontext.store.paths import StorePaths
 
 RANK_DEPTH = 20
@@ -61,8 +63,10 @@ def run(args, store: StorePaths, config: Config) -> Reply:
     if not (corpus / "records").is_dir():
         return error(f"no corpus at {corpus} (expected raw/ and records/ inside)", args.json)
     try:
-        questions = tomllib.loads(questions_file.read_text(encoding="utf-8")).get("question", [])
-        pairs = [(str(q["text"]), str(q["expect"])) for q in questions]
+        tables = tomllib.loads(questions_file.read_text(encoding="utf-8"))
+        pairs = [(str(q["text"]), str(q["expect"])) for q in tables.get("question", [])]
+        prompts = [(str(p["text"]), str(p["expect"]) if "expect" in p else None)
+                   for p in tables.get("prompt", [])]
     except (OSError, tomllib.TOMLDecodeError, KeyError, TypeError) as e:
         return error(f"cannot read questions from {questions_file}: {e}", args.json)
     if not pairs:
@@ -90,6 +94,7 @@ def run(args, store: StorePaths, config: Config) -> Reply:
                                   None))
         finally:
             conn.close()
+        briefs = [[h.ref for h in prompt_hits(temp, text)] for text, _ in prompts]
         stored, source = _stored_share(temp.records)
 
     top = sum(1 for r in ranks if r is not None and r <= TOP)
@@ -98,11 +103,20 @@ def run(args, store: StorePaths, config: Config) -> Reply:
             else "stored-to-source share: not recorded in this corpus"]
     if bundle.is_file():
         body.append(f"commits indexed from {BUNDLE}: {counts['commits_indexed']}")
+    related = [(expect, named) for (_, expect), named in zip(prompts, briefs) if expect]
+    found = sum(1 for expect, named in related if expect in named)
+    unrelated = [named for (_, expect), named in zip(prompts, briefs) if not expect]
+    quiet = sum(1 for named in unrelated if not named)
+    if prompts:
+        body.append(f"prompt brief: {found} of {len(related)} prompts name the expected session; "
+                    f"{quiet} of {len(unrelated)} unrelated prompts name none")
     summary = Block("eval", "summary", f"{top} of {len(pairs)} expected answers in the top {TOP}",
                     body=body,
                     extra={"top3": top, "questions": len(pairs), "min": args.minimum,
                            "stored_bytes": stored, "source_bytes": source, "share_percent": share,
                            "commits_indexed": counts["commits_indexed"],
+                           "prompts_found": found, "prompts_related": len(related),
+                           "prompts_quiet": quiet, "prompts_unrelated": len(unrelated),
                            "bundle": str(bundle) if bundle.is_file() else None})
     blocks = [summary]
     for n, ((text, expect), rank) in enumerate(zip(pairs, ranks), 1):
@@ -110,6 +124,14 @@ def run(args, store: StorePaths, config: Config) -> Reply:
                             body=[f"expected: {expect}",
                                   f"rank: {rank}" if rank else f"rank: not in the top {RANK_DEPTH}"],
                             extra={"expected": expect, "rank": rank}))
+    for n, ((text, expect), named) in enumerate(zip(prompts, briefs), 1):
+        rank = named.index(expect) + 1 if expect in named else None
+        body = [f"expected: {expect or 'none'}",
+                f"named: {', '.join(r[:8] for r in named) or 'none'}"]
+        if expect:
+            body.append(f"rank: {rank}" if rank else "rank: not in the brief")
+        blocks.append(Block("prompt", f"p{n}", text, body=body,
+                            extra={"expected": expect, "rank": rank, "named": named}))
     passed = args.minimum is None or top >= args.minimum
     note = "" if passed else f"Below the minimum: {top} of {len(pairs)} in the top {TOP}, need {args.minimum}."
     text = render("ctx eval", blocks, full=True, as_json=args.json, note=note,

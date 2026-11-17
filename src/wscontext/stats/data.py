@@ -26,6 +26,13 @@ def in_window(stamp: str | None, since: datetime | None) -> bool:
     return since is None or ((parsed := parse_time(stamp)) is not None and parsed >= since)
 
 
+def has_transcript(rec: SessionRecord) -> bool:
+    """A session that was prompted: it has turns, stored transcript bytes or tool calls. Opening
+    and closing a panel leaves a record with none of them."""
+    return bool(rec.turns or rec.tool_calls or rec.ctx_calls
+                or (rec.transcript_bytes or {}).get("stored"))
+
+
 def window_sessions(store: StorePaths, since: datetime | None) -> list[SessionRecord]:
     return [r for r in list_sessions(store) if in_window(r.started_at, since)]
 
@@ -332,6 +339,8 @@ def _volume(store: StorePaths, config: Config, since: datetime | None,
             row["sessions"] += 1
             row["stored_bytes"] += all_volumes[rec.session_id]["stored"]
     with_retrieval = [r for r in window if r.retrieval is not None]
+    with_transcript = [r for r in window if has_transcript(r)]
+    prompted = [r for r in with_transcript if r.prompt_brief_tokens]
     return {
         "store_bytes": local_fig["bytes"], "branch_bytes": branch_fig["bytes"],
         "local": _public(local_fig), "history_branch": _public(branch_fig),
@@ -355,7 +364,11 @@ def _volume(store: StorePaths, config: Config, since: datetime | None,
                       "sessions_with_brief": sum(bool(r.brief_tokens) for r in with_retrieval),
                       "brief_share": (sum(bool(r.brief_tokens) for r in with_retrieval)
                                       / len(with_retrieval)) if with_retrieval else None,
-                      "brief_tokens": sum(r.brief_tokens or 0 for r in window)},
+                      "brief_tokens": sum(r.brief_tokens or 0 for r in window),
+                      "prompt_brief": config.retrieval.prompt_brief,
+                      "sessions_with_prompt_brief": len(prompted),
+                      "prompt_brief_share": len(prompted) / len(with_transcript) if with_transcript else None,
+                      "prompt_brief_tokens": sum(r.prompt_brief_tokens for r in prompted)},
     }
 
 

@@ -163,6 +163,10 @@ def _final(store: StorePaths, config: Config, session_id: str, source: Path | No
         record.retrieval = state["retrieval"]
     if "brief_tokens" in state:
         record.brief_tokens = (record.brief_tokens or 0) + state["brief_tokens"]
+    if "prompt_brief_tokens" in state:
+        record.prompt_brief_tokens = (record.prompt_brief_tokens or 0) + state["prompt_brief_tokens"]
+        record.prompt_brief_sessions = list(dict.fromkeys(
+            [*(record.prompt_brief_sessions or []), *state.get("prompt_brief_sessions", [])]))
     record.head_end = git_value(store, "rev-parse", "HEAD")
     if raw.is_file():
         record.transcript_bytes = stored_sizes(raw, store.raw / "subagents" / session_id)

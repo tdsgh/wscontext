@@ -13,6 +13,8 @@ from wscontext.redact.account import with_account_ids
 from wscontext.logs import HOOKS_LOG, append_log, now_iso
 from wscontext.store.paths import StorePaths, is_safe_name
 
+OUTPUT_EVENTS = {"sessionstart": "SessionStart", "userpromptsubmit": "UserPromptSubmit"}
+
 
 def run_budgeted(event: str, work: Callable[[dict, dict], None]) -> dict:
     """Run `work(entry, ctx)` to completion or to its time budget; returns the hook-run log entry.
@@ -63,7 +65,8 @@ def run(event: str, raw: str) -> dict:
             raise ValueError("hook input is not a JSON object")
         sid = payload.get("session_id")
         entry["session_id"] = sid
-        handler = HANDLERS.get(event.lower().replace("-", "").replace("_", ""))
+        name = event.lower().replace("-", "").replace("_", "")
+        handler = HANDLERS.get(name)
         if handler is None:
             raise ValueError(f"unknown hook event {event!r}")
         if not isinstance(sid, str) or not is_safe_name(sid):
@@ -74,7 +77,7 @@ def run(event: str, raw: str) -> dict:
         out = handler(store, ctx["config"], payload)
         if isinstance(out, str) and out:
             ctx["output"] = json.dumps({"hookSpecificOutput": {
-                "hookEventName": "SessionStart", "additionalContext": out}})
+                "hookEventName": OUTPUT_EVENTS[name], "additionalContext": out}})
 
     return run_budgeted(event, work)
 

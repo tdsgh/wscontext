@@ -71,6 +71,20 @@ def _prompt_text(message: dict) -> str | None:
     return None
 
 
+_DROPPED_TAGS = re.compile(
+    r"<(ide_opened_file|ide_selection|system-reminder|command-message|local-command-stdout)>"
+    r".*?</\1>", re.DOTALL)
+_KEPT_TAGS = re.compile(r"</?(?:command-name|command-args)>")
+
+
+def prompt_without_wrappers(text: str) -> str:
+    """A prompt with Claude Code's wrapper blocks removed: IDE context, system reminders and
+    command echoes go with their content; the text of `command-name` and `command-args` stays,
+    so a slash command reads `/name args`. Stdlib only: the hook calls it."""
+    text = _KEPT_TAGS.sub(" ", _DROPPED_TAGS.sub(" ", text))
+    return " ".join(text.split())
+
+
 def _result_text(content: object) -> str:
     if isinstance(content, str):
         return content

@@ -108,7 +108,10 @@ def data_blocks(d: dict) -> list[Block]:
              f"{'on' if r['enabled'] and r['brief'] else 'off'}",
              f"sessions with a brief: {r['sessions_with_brief']} of {r['sessions_with_switch']} "
              f"({share(r['brief_share'])}); brief tokens given: {r['brief_tokens']}; "
-             f"sessions captured with retrieval on: {r['sessions_retrieval_on']}"]
+             f"sessions captured with retrieval on: {r['sessions_retrieval_on']}",
+             f"prompt brief: {'on' if r['enabled'] and r['prompt_brief'] else 'off'}; sessions given one: "
+             f"{r['sessions_with_prompt_brief']} ({share(r['prompt_brief_share'])} of sessions with a "
+             f"transcript); prompt brief tokens given: {r['prompt_brief_tokens']}"]
     summary = {k: v for k, v in d.items() if k not in ("per_session", "growth")}
     return [_block("data", "collected data", body, summary),
             _block("data-volume", "stored volume", volume, {k: d[k] for k in (
@@ -151,13 +154,17 @@ def queries_blocks(q: dict, calls: list[dict], shown: int) -> list[Block]:
             f"sessions ({share(q['ctx_first_share'])})"]
     a = q["adoption"]
     body += [f"sessions that called ctx: {a['with_ctx']} of {a['sessions']} ({share(a['with_ctx_share'])}); "
-             f"called ctx find: {a['with_find']} ({share(a['with_find_share'])})"]
+             f"called ctx find: {a['with_find']} ({share(a['with_find_share'])}); "
+             f"sessions never prompted: {a['never_prompted']}"]
     body += [f"sessions with ctx code: {a['with_code']} ({share(a['with_code_share'])}); "
              f"with ctx impact: {a['with_impact']} ({share(a['with_impact_share'])}); "
              f"with ctx why on a name: {a['with_why_name']} ({share(a['with_why_name_share'])})",
              f"ctx code or ctx impact before any other search, read or ctx call: "
              f"{q['graph_first']} of {q['sessions_considered']} sessions "
              f"({share(q['graph_first_share'])})"]
+    p = q["prompt_brief"]
+    body += [f"sessions given a prompt brief that then ran ctx show or ctx find: {p['followed']} of "
+             f"{p['sessions_given']} ({share(p['share'])})"]
     weekly = [[w["week"], w["sessions"], w["with_ctx"], w["with_find"]] for w in a["by_week"]]
     if weekly:
         body += table(["week", "sessions", "ctx", "find"], weekly)
@@ -195,6 +202,9 @@ def session_blocks(d: dict, calls: list[dict], first: str | None, volume: dict) 
             f"ended by: {d['ended_by'] or 'not recorded'}; retrieval: "
             f"{'not recorded' if d['retrieval'] is None else 'on' if d['retrieval'] else 'off'}; "
             f"brief: {'not recorded' if d['brief_tokens'] is None else 'none given' if not d['brief_tokens'] else str(d['brief_tokens']) + ' tokens'}",
+            "prompt brief: " + ("not recorded" if d["prompt_brief_tokens"] is None else "none given"
+                                if not d["prompt_brief_tokens"] else f"{d['prompt_brief_tokens']} tokens, named "
+                                + (", ".join(d["prompt_brief_sessions"] or []) or "no sessions")),
             f"stored: {size(volume['stored'])} (source {size(volume['source'])}"
             f"{'; measured on the stored copy' if volume['measured'] else ''}); "
             f"by kind: {_groups(volume['kinds'])}; PreCompact snapshots: {size(volume['snapshot_bytes'])}"]

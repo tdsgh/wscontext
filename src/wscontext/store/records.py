@@ -52,6 +52,9 @@ class SessionRecord:
     ended_by: str | None = None  # "session-end" or "idle"
     retrieval: bool | None = None  # whether the brief and `ctx find` were on
     brief_tokens: int | None = None
+    # the prompt brief: tokens given, and the sessions it named (no prompt text)
+    prompt_brief_tokens: int | None = None
+    prompt_brief_sessions: list[str] | None = None
     # "source", "stored", and stored bytes per entry kind
     transcript_bytes: dict[str, int] | None = None
     schema_version: int = CURRENT_SCHEMA

@@ -4,6 +4,12 @@
 #   expect  a full session id, or the first 12 characters of a commit SHA
 # The comment above each question names the tasks.toml task it is about and the answer type.
 # Questions asking "which commit" expect the commit; all others expect the session.
+#
+# Each [[prompt]] is a first prompt as a developer would type it to start new work, scored
+# against the prompt brief rather than `ctx find`. Its fields:
+#   text    the prompt
+#   expect  the full session id the brief should name; left out when the corpus holds no related
+#           past work and the brief should name nothing
 
 # reject-pickle, session
 [[question]]
@@ -104,3 +110,55 @@ expect = "3cf44ad9c8d8"
 [[question]]
 text = "which commit made the money sign configurable so amounts can print in euros?"
 expect = "78ccd840f642"
+
+# reject-pickle, related
+[[prompt]]
+text = "Can we save the ledger with pickle instead? Loading the JSON file feels slow."
+expect = "ce6a5816-558c-45c3-ae86-f49e400e7ddc"
+
+# fix-zero-budget, related
+[[prompt]]
+text = "budget status prints a strange percentage for a category whose limit is 0, please fix it"
+expect = "01b0aea5-96a1-4b83-98f2-25e0aa211422"
+
+# argparse, related
+[[prompt]]
+text = "Let's move the command line parsing over from argparse to click."
+expect = "a79ee6a0-dce5-4ce0-b753-e606418abd07"
+
+# currency-symbol, related
+[[prompt]]
+text = "Amounts can already print in euros, add the pound sign so they can print as GBP too."
+expect = "85e29e4c-e4b4-4796-88c3-f5b312cf8d22"
+
+# report-since, related
+[[prompt]]
+text = "The --since filter on the monthly report should also accept just a month, like 2026-03."
+expect = "eb949139-7ee2-451f-b4eb-10c220cf185b"
+
+# csv-export, related
+[[prompt]]
+text = "Add --format json to export, next to the csv format it already has."
+expect = "a242404b-4248-48cb-91ac-837b80dee58d"
+
+# package-split, related
+[[prompt]]
+text = "Running python3 tally.py fails with an import error since the package split, can you fix it?"
+expect = "0df17769-1c44-4ea4-abd9-9828c54b967c"
+
+# tags, related
+[[prompt]]
+text = "Make tags case-insensitive, so --tag Food and --tag food count as the same tag."
+expect = "7b4e399c-9340-4298-b286-d58c0bb0c92f"
+
+# no related past work
+[[prompt]]
+text = "Add type hints everywhere and make mypy pass in strict mode."
+
+# no related past work
+[[prompt]]
+text = "Add an interactive curses screen for browsing expenses with the arrow keys."
+
+# no related past work
+[[prompt]]
+text = "Support several ledgers, one per household member, picked with --profile NAME."

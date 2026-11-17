@@ -14,9 +14,27 @@ KINDS = {
 _CTX = re.compile(r"(?:^|[;&|(\n])\s*(?:\S*[/\\])?ctx(?:\.exe)?\s+([A-Za-z][\w-]*)([^;&|\n]*)")
 
 
+_REDIRECT = re.compile(r"\d*(?:>>?|<)")
+
+
+def drop_redirections(words: list[str]) -> list[str]:
+    """Words without shell redirections: `2>/dev/null`, `>file`, `> file`, `2>`, `<file`."""
+    out: list[str] = []
+    skip = False
+    for w in words:
+        if skip:
+            skip = False
+        elif m := _REDIRECT.match(w):
+            skip = m.end() == len(w)  # a bare operator: its target is the next word
+        else:
+            out.append(w)
+    return out
+
+
 def ctx_invocations(command: str) -> list[tuple[str, list[str]]]:
     """Every `ctx` call in a shell command, as (subcommand, argv after `ctx`)."""
-    return [(m.group(1), [m.group(1), *m.group(2).split()]) for m in _CTX.finditer(command)]
+    return [(m.group(1), [m.group(1), *drop_redirections(m.group(2).split())])
+            for m in _CTX.finditer(command)]
 
 
 def ctx_call_key(sub: str, argv: list[str]) -> str:
