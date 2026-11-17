@@ -462,7 +462,9 @@ def test_doctor_stale_tracking_refs_and_the_history_move(shared_remote, opts, mo
     run_git(a, "update-ref", "-d", LEGACY_REF)
 
     # the remote still has the stage-1 branch: doctor and `ctx sync --status` say so, the push removes it
-    run_git(a, "push", "-q", "origin", f"{tip}:{LEGACY_REF}")
+    # --no-verify: init installed the pre-push hook, which would start a detached worker
+    # that pushes history and removes this branch at an arbitrary moment during the test
+    run_git(a, "push", "-q", "--no-verify", "origin", f"{tip}:{LEGACY_REF}")
     ctx(capsys, "sync", "--setup")  # fetches
     _, out, _ = ctx(capsys, "doctor")
     assert f"[WARN] history ref: origin still has the stage-1 branch {LEGACY_REF}" in out
