@@ -49,6 +49,9 @@ are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
   lists the past sessions and commits that discuss the topic. You can narrow
   the list by branch, author, date, file or kind.
 - When a session starts, the agent gets a short brief of recent related work.
+- With the first prompt of a session, the agent also gets a short brief of past
+  sessions that match what the prompt asks. If no past session matches well,
+  it gets nothing.
 - A conversation that was closed without a clean end is still finalized and
   shared. This happens once it has been idle for longer than the configured
   staleness window.
@@ -91,7 +94,8 @@ are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
 - **Better grounded changes.** The agent can check why code exists before
   editing it (`ctx why`) and what an edit affects (`ctx impact`).
 - **Fewer repeated mistakes.** Past decisions come back at the moment they
-  matter, both from the brief injected at session start (push) and from skill
+  matter, both from the briefs injected at session start and at the first
+  prompt (push) and from skill
   triggers (pull) (ADR-012).
 - **Less risk of acting on stale reasoning.** Every result is flagged when the
   decision behind it was superseded or the code it refers to has changed
@@ -119,7 +123,7 @@ are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
 
 | Adds | Saves |
 |---|---|
-| About 500 tokens per session for the session-start brief | Tokens spent on file dumps and repeated grep/read rounds |
+| About 500 tokens per session for the session-start brief, and up to about 300 more when the first prompt matches past work | Tokens spent on file dumps and repeated grep/read rounds |
 | Up to about 1,500 tokens per `ctx` call (budgeted, with `--limit` and `--full` overrides) | Turns spent rediscovering context or redoing rejected approaches |
 | LLM calls for distilling decisions, after sessions end and off the critical path (stage 4 only) | |
 | Local disk for the transcripts (only what wscontext reads) and the search index. By default, raw copies older than 180 days are removed locally | |

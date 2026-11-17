@@ -69,9 +69,20 @@ Otherwise fetches and pushes fail, and `ctx doctor` warns.
 A session gets the brief when a new session starts, after `/clear` and after
 compaction. A resumed session does not get it.
 
+The first prompt of a session also gets a prompt brief: up to 3 past sessions
+that match the words of the prompt. If no past session matches well, there is
+no prompt brief. Later prompts in the same session get none. `ctx brief` shows
+the session brief only.
+
+Best practice: the prompt brief is built from the first prompt only. Keep a
+session on the topic of its first prompt. Start a new session, or use `/clear`,
+for a new topic.
+
 Setting `[retrieval] enabled = false` in `.wscontext/config.toml` turns off the
-brief, `ctx find`, `ctx code` and `ctx impact`. Then run `ctx init` again, so
-that the CLAUDE.md block no longer has their lines. `ctx why` keeps working.
+brief, the prompt brief, `ctx find`, `ctx code` and `ctx impact`. Then run
+`ctx init` again, so that the CLAUDE.md block no longer has their lines.
+`ctx why` keeps working. `brief = false` turns off only the session brief.
+`prompt_brief = false` turns off only the prompt brief.
 
 ## Search code
 

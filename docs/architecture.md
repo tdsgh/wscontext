@@ -18,7 +18,7 @@ machine except through an opt-in Git remote.
  Claude Code session ──hooks──▶ capture ──▶ raw/ + records/ ──▶ history.db ─┐
         ▲                          ▲          (source of truth)              ├─▶ ctx ──▶ agent context
         │                          │                             graph.db ──┘          (push brief at
-        │                 git hooks (trailer,        ▲                                  SessionStart,
+        │                 git hooks (trailer,        ▲                                  SessionStart and first prompt,
         │                 checkpoint, rewrite)       └── repository working tree       pull via skill)
         │                                                + git log
         └───────────────────────────────── ctx output ◀────────────────────────────────┘
@@ -99,7 +99,7 @@ existing ones) and the CLAUDE.md block. The store is split (→ ADR-004):
   on a remote's history as of the last fetch or push (a shared tip). The
   pruned files' paths on the ref go into `state/pruned.json`. The step that
   copies fetched history into `raw/` and `records/` (materialize) never writes
-  these files back (src/wscontext/capture/worker.py:228-274). `ctx show`,
+  these files back (src/wscontext/capture/worker.py:247-294). `ctx show`,
   `ctx why` and the index read a pruned copy from the ref. The index rows of a
   pruned session stay.
 
@@ -120,7 +120,7 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
 | Hook | Fires when | Records |
 |---|---|---|
 | `SessionStart` | A session starts, resumes, clears or compacts | Session record (ID, branch, HEAD, start, author) kept on resume; marks the session active for the worktree; detached history fetch when sync is configured; spawns the sweep worker, which finalizes idle sessions, when a session is idle or the last sweep ran more than a day ago; returns the brief as additional context on `startup`, `clear` and `compact`, never on `resume` or `fork` (src/wscontext/capture/handlers.py:18) |
-| `UserPromptSubmit` | A prompt is sent | Turn start time; if the session was finalized while idle, marks it active again |
+| `UserPromptSubmit` | A prompt is sent | Turn start time; if the session was finalized while idle, marks it active again; on a session's first prompt, returns the prompt brief as additional context (→ ADR-048) (src/wscontext/capture/handlers.py:65-99) |
 | `PostToolUse` (all tools, async) | A tool call finishes | Tool name, file path for edits, `ctx` invocation and output size |
 | `PreCompact` | Before context compaction | Transcript snapshot only while `capture.precompact_snapshot` is on (off by default, src/wscontext/config.py:34) |
 | `Stop` | A turn ends | Turn end time; detached worker copies, redacts and reduces the transcript, then re-indexes the session |
@@ -131,13 +131,13 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
 | Git `pre-push` | Before a push | Detached worker pushes `refs/wscontext/history` when sync is configured; the shim runs wscontext only if the chained original exited 0 |
 | Git `post-merge` | Merge | Starts the graph worker when `index/graph.db` exists, for every merge. A merge commit created here that carries `AI-Session` trailers is also checkpointed like `post-commit`; a fast-forward and `--squash` write no checkpoint (src/wscontext/githooks/handlers.py:126-150) |
 | Git `post-checkout` | Branch switch | Starts the graph worker when `index/graph.db` exists. A file checkout does nothing (src/wscontext/githooks/handlers.py:153-156) |
-| `ctx` read commands | `why`, `sessions`, `show`, `stats`, `find`, `brief`, `code`, `impact` | Throttled history fetch when sync is configured; spawns the sweep worker under the same condition as `SessionStart` (src/wscontext/cli/main.py:31) |
+| `ctx` read commands | `why`, `sessions`, `show`, `stats`, `find`, `brief`, `code`, `impact` | Throttled history fetch when sync is configured; spawns the sweep worker under the same condition as `SessionStart` (src/wscontext/cli/main.py:33) |
 
 ### Search, brief and idle sessions
 
 - **Index.** One SQLite file, `index/history.db`. One FTS5 table holds
   exchanges (prompt, reply, tool calls) and linked commit messages
-  (src/wscontext/index/db.py:19-21). When a session's source changes, the
+  (src/wscontext/index/db.py:25-27). When a session's source changes, the
   whole session is re-indexed (src/wscontext/index/build.py:1-5). The capture
   worker re-indexes a session after each copy. The fetch worker refreshes the
   index after a fetch that changed history. `ctx find`, `ctx brief` and
@@ -145,25 +145,41 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
   ADR-013). `ctx rebuild` deletes the index and builds it again.
 - **Ranking.** Search matches words only. bm25 ranks a match in the prompt
   highest, then in the commit message, then in the reply, then in tool calls
-  (src/wscontext/index/search.py:8). Common English words are dropped from the
+  (src/wscontext/index/search.py:12-13). Common English words are dropped from the
   query, unless no other word is left. A search first looks for rows that
   contain every word; words found in half the indexed rows or more are left
   out of this step. If that finds fewer rows than the limit, rows that match
   any word fill the rest. A matching commit is listed right after the
   best-ranked session it is linked to (→ ADR-037)
-  (src/wscontext/index/search.py:47-80).
+  (src/wscontext/index/search.py:61-99).
 - **Brief.** Inside the `SessionStart` hook, `capture/brief.py` opens the index
-  read-only and builds a brief of about 500 tokens. It returns nothing when the
-  index is missing (→ ADR-035). The `[retrieval]` settings turn the brief and
-  search off (→ ADR-036); `ctx code` and `ctx impact` follow the same switch
-  (→ ADR-044).
+  read-only and builds a brief of about 500 tokens
+  (src/wscontext/capture/brief.py:15,51). It returns nothing when the index is
+  missing (→ ADR-035).
+- **Prompt brief.** Inside the `UserPromptSubmit` hook, on a session's first
+  prompt only, `capture/brief.py` searches the index with the prompt's
+  distinctive words. It returns up to 3 past sessions within about 300 tokens
+  (src/wscontext/capture/brief.py:18,90-114). It returns nothing unless a past
+  exchange clears a strict relevance floor
+  (src/wscontext/index/search.py:186-287; → ADR-048).
+- **Retrieval switches.** `[retrieval] enabled = false` turns off the brief, the
+  prompt brief and search (→ ADR-036); `ctx code` and `ctx impact` follow it
+  (→ ADR-044). `brief = false` turns off only the brief. `prompt_brief = false`
+  turns off only the prompt brief (src/wscontext/config.py:47-52).
+- **Session titles.** A session's title is its first prompt with Claude Code's
+  wrapper blocks removed, cut to 80 characters
+  (src/wscontext/adapters/claude_code.py:74-85,
+  src/wscontext/index/build.py:26,97-102). The brief and `ctx find` show it.
 - **Idle sessions.** The `sweep` worker finalizes active sessions that have
   been idle longer than `capture.stale_session_minutes`. Then it prunes
   `raw/`. A sweep that starts while another one runs does nothing
-  (src/wscontext/capture/worker.py:277-293; → ADR-034).
+  (src/wscontext/capture/worker.py:296-310; → ADR-034).
 - **Eval.** `ctx eval` scores search on a fixed corpus in `eval/stage2/`: the
   sessions, the questions, and a Git bundle of the repository the scripted
   sessions worked in. `acceptance/record_corpus.py` recorded the corpus once.
+  `[[prompt]]` entries in `questions.toml` score the prompt brief: the expected
+  session must be among those it names, and a prompt with no related past work
+  must get none (src/wscontext/cli/eval.py:1-8).
 - **Benchmark.** `acceptance/benchmark.py` runs the tasks of one subject
   folder headless, with retrieval off and on (→ ADR-043, ADR-047). The
   default subject is `eval/bench/`; `--subject DIR` picks another. It is not
@@ -245,9 +261,10 @@ Every record carries a schema version and the Git author who produced it.
   time, worktree, files touched, subagent IDs, and per-session counts: turns,
   tool calls by tool, `ctx` calls by command, turn tokens where available.
   Schema 2 adds: how the session ended (`session-end` or `idle`), whether
-  retrieval was on, how many brief tokens it was given, and transcript sizes in
-  bytes (source, stored, and stored per kind of entry). Readers still accept
-  schema 1 (src/wscontext/store/records.py:36-52).
+  retrieval was on, how many brief tokens it was given, how many prompt-brief
+  tokens it was given and which sessions that brief named (never the prompt
+  text), and transcript sizes in bytes (source, stored, and stored per kind of
+  entry). Readers still accept schema 1 (src/wscontext/store/records.py:36-57).
 - **Event** — one prompt, assistant message or tool call in a session, with role
   and timestamp. Lives in the raw transcript; the index stores exchanges
   (prompt plus response).
@@ -273,9 +290,9 @@ Every record carries a schema version and the Git author who produced it.
 | Redactor | Pattern rules applied before every write, including the operator's account IDs by digest (→ ADR-006, ADR-046) | `src/wscontext/redact/` | 1 |
 | History ref | Plumbing writer, union merge, fetch and push of `refs/wscontext/history` (→ ADR-007, ADR-008, ADR-031) | `src/wscontext/history/` | 1 |
 | Git hooks | Shims plus handlers for trailer, checkpoint, rewrite, push; chaining installer | `src/wscontext/githooks/` | 1 |
-| Stats | `ctx stats` views over records, logs and indexes, including stored volume, index, adoption, brief and the code graph (→ ADR-018, ADR-019) | `src/wscontext/stats/` | 1+ |
+| Stats | `ctx stats` views over records, logs and indexes, including stored volume, index, adoption, brief, prompt brief and the code graph. Adoption shares count only sessions with a transcript; sessions never prompted are counted apart (→ ADR-018, ADR-019, ADR-049) | `src/wscontext/stats/` | 1+ |
 | History index | SQLite FTS5, vectors in stage 4; updated incrementally, and each query first indexes anything missing (→ ADR-013) | `src/wscontext/index/` | 2 (FTS5), 4 (vectors) |
-| Session brief | `SessionStart` context from prior work (→ ADR-012, ADR-035) | `src/wscontext/capture/brief.py` | 2 |
+| Session brief | `SessionStart` context from prior work, and the prompt brief on a session's first prompt (→ ADR-012, ADR-035, ADR-048) | `src/wscontext/capture/brief.py` | 2 |
 | Eval | `ctx eval`, which scores search on the recorded corpus, and the script that records the corpus | `src/wscontext/cli/eval.py`, `eval/`, `acceptance/record_corpus.py` | 2 |
 | Code graph | tree-sitter definitions, imports, calls, co-change and session links, incremental by content hash (→ ADR-014); language parts under `graph/languages/` (→ ADR-038); graph worker (→ ADR-039) | `src/wscontext/graph/` | 3 |
 | Benchmark | The on/off task set and its runner (→ ADR-043, ADR-047) | `eval/bench/`, `acceptance/benchmark.py` | 3 |

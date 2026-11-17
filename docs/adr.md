@@ -807,3 +807,56 @@ part, for the subject.
 
 **Guardrail.** `eval/alpha/` stays out of Git; its absence from a fresh clone
 is intended.
+
+### ADR-048 — The first prompt of a session also gets a brief
+
+**Decision.** On a session's first `UserPromptSubmit`, the hook searches the
+index with the prompt's words and returns up to 3 past sessions as additional
+context, within about 300 tokens. It uses the same quoted-data frame as the
+session brief. When no session clears the relevance floor, it returns nothing.
+Later prompts get nothing (src/wscontext/capture/handlers.py:65-99,
+src/wscontext/capture/brief.py:18,90-114). This extends ADR-012.
+
+**Implications.**
+- The switch is `[retrieval] prompt_brief`. `enabled = false` turns it off too.
+  `brief = false` does not (src/wscontext/config.py:47-52).
+- The floor: one past exchange must share at least two distinctive words with
+  the prompt, and that match must be unlikely by chance
+  (src/wscontext/index/search.py:186-287).
+- The search reads the index read-only, never refreshes it, and does not wait
+  on a writer. A missing or busy index gives no prompt brief
+  (src/wscontext/index/search.py:208-215).
+- The prompt text is not stored. The session state and the session record keep
+  the token count and the IDs of the sessions named
+  (src/wscontext/store/records.py:55-57).
+- Hook output carries the name of the event that produced it
+  (src/wscontext/capture/dispatch.py:16,80).
+- A session's title is its first prompt with Claude Code's wrapper blocks
+  removed. The tag list lives in the transcript adapter (→ ADR-002)
+  (src/wscontext/adapters/claude_code.py:74-85, src/wscontext/index/build.py:97-102).
+  The indexed search text keeps the full prompt.
+- The index schema version is 3 (src/wscontext/index/db.py:8), so older indexes
+  rebuild on first use. This replaces the version recorded in ADR-045.
+- `ctx eval` scores `[[prompt]]` entries against the prompt brief
+  (src/wscontext/cli/eval.py:1-8, eval/stage2/questions.toml).
+- `ctx stats` reports sessions given a prompt brief, its tokens, and how many of
+  those sessions then ran `ctx show` or `ctx find`
+  (src/wscontext/stats/queries.py:119-129).
+
+**Guardrail.** The floor is strict on purpose: no brief beats an unrelated one.
+Change it only on measured noise and follow-through figures.
+
+### ADR-049 — The hook and the stats read a shell command the same way; shares count prompted sessions
+
+**Decision.** Shell redirections (`2>/dev/null`, `2>&1`, `>file`, `<file`) are
+not arguments of a `ctx` call. `drop_redirections` removes them for the hook
+and for the stats join (src/wscontext/capture/kinds.py:17-37,
+src/wscontext/stats/queries.py:16-18). Adoption shares count only sessions that
+have a transcript. Sessions never prompted are reported as their own count
+(src/wscontext/stats/data.py:29-33, src/wscontext/stats/queries.py:95-113).
+
+**Implications.**
+- Call logs written before the change join correctly, because the join applies
+  the rule at read time.
+- A session record with no turns, no tool calls, no `ctx` calls and no stored
+  transcript is not a session for any share.

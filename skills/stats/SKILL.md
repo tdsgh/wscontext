@@ -1,6 +1,6 @@
 ---
 name: stats
-description: Use when the user asks how wscontext is doing, how much was captured, whether hooks are healthy, how many turns or tool calls a session took, how often `ctx` was used, how large the stored history is, or whether search and the brief are on. Runs `ctx stats` and explains the report.
+description: Use when the user asks how wscontext is doing, how much was captured, whether hooks are healthy, how many turns or tool calls a session took, how often `ctx` was used, how large the stored history is, or whether search, the brief and the prompt brief are on. Runs `ctx stats` and explains the report.
 ---
 
 # stats
@@ -12,12 +12,14 @@ Views:
   linked, store size, redaction hits, sharing status; stored volume by kind
   against the source transcripts, for the local store and for shared history,
   with size warnings; the largest stored sessions; growth per week; the search
-  index (size, rows, lag); the retrieval switch and how many sessions got a
-  brief.
+  index (size, rows, lag); the retrieval switch, how many sessions got a
+  brief and how many got a prompt brief.
 - `turns`: turns, turn duration and tool calls by kind, per session and over
   time.
 - `queries`: each `ctx` call with its result count, answer size, latency, and
-  whether it came before the first search or read.
+  whether it came before the first search or read; adoption shares over
+  sessions that were prompted, sessions never prompted, and how many sessions
+  given a prompt brief then ran `ctx show` or `ctx find`.
 - `hooks`: Claude Code and Git hook runs, failures and latency per event.
 - `code`: the code graph: languages supported, switched on and unavailable;
   files by status and per language; last build and refresh; files changed since
