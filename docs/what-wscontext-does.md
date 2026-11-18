@@ -5,7 +5,8 @@ it improves development, and how it affects Claude Code. The system itself is
 described in [architecture.md](architecture.md); decisions are in
 [adr.md](adr.md).
 
-Stages 1 to 3 are built. Stage 4 is designed. Everything below marked
+Stages 1 to 3 are built. Stage 4 is designed. The import stage, for
+repositories already in progress, is planned. Everything below marked
 stage 4 describes the designed plugin. The effects on quality, speed and cost
 are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
 ([roadmap.md](roadmap.md)), not measured results.

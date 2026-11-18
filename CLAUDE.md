@@ -3,7 +3,8 @@
 
 A local harness for Claude Code that captures agent sessions, links them to Git
 commits, indexes them alongside a code graph, and gives the agent one search
-tool (`ctx`) over both. Stages 1 to 3 are built. Stages 4 and 5 are designed.
+tool (`ctx`) over both. Stages 1 to 3 are built. Stages 4 and 5 are designed. The import stage is
+planned.
 The system itself is described in
 [docs/architecture.md](docs/architecture.md).
 

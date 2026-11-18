@@ -158,6 +158,39 @@ between two checkouts of one repository.
   and the benchmark. Requirements:
   [graph-rust-phase-1.md](graph-rust-phase-1.md).
 
+## Import — past work in a repository already in progress
+
+wscontext is often set up in a repository that already has history: past
+Claude Code sessions, commits and design documents. This stage finds what is
+still available, shows it, and imports what the user accepts. Built after the
+Alpha exit and before Beta, where a second developer sets wscontext up on a
+shared repository that is already in progress.
+
+- **Requirements:** `import-phase-1.md`, not written yet.
+- **Past sessions:** Claude Code transcripts of this repository that are still
+  on disk and not captured yet. Claude Code deletes its transcripts after a
+  set number of days (30 by default), so older sessions are gone for good.
+- **Past commits:** a commit made before setup is linked to an imported
+  session only when that session ran the `git commit` that made it. A commit
+  with no such session stays unlinked. Links are never guessed from time or
+  changed files.
+- **Workspace documents:** Markdown files in the repository that record
+  decisions or design, such as `docs/adr.md` and `docs/architecture.md`.
+  Their sections become searchable through `ctx find`, next to sessions and
+  commits. Turning them into decision records is part of stage 4.
+- **The user decides:** a preview lists what was found (sessions, the commits
+  they link, documents) and writes nothing. The user then imports all of it,
+  part of it, or nothing. A later run offers only what is new.
+- **Same path as live capture:** imported content passes through the redactor
+  and is stored like a live session. With sync on, it is shared like a live
+  session.
+- **Not counted:** imported sessions do not count toward the Alpha exit.
+- **Gate:** the stage's acceptance scenarios pass in a throwaway repository
+  that has transcripts and commits from before setup: the preview writes
+  nothing; accepted items are imported and declined ones are not; a commit is
+  linked only through its own `git commit` result; a second run imports
+  nothing new.
+
 ## Stage 4 — Distillation and semantic search
 
 Asynchronous decision records with supersession and review status, local
