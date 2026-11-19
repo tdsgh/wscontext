@@ -152,6 +152,26 @@ between two checkouts of one repository.
   300-second limit (3 off, 1 on). Its check passed, so they count as done,
   but Claude Code reported no turns, tokens or cost for them. The result is
   not judged here. Any change it suggests goes into stage 4.
+- **Sync result (2026-11-19, plugin 0.3.5):** passed in both directions. The
+  test used two checkouts of one private repository on one machine, with its
+  GitHub remote. The first checkout pushed 15 sessions. The second checkout
+  received them with `ctx init`. Then a session and a commit made in the
+  second checkout reached the first one through its throttled fetch.
+  `ctx sessions`, `ctx find`, `ctx show` and `ctx why` gave the same answers
+  in both checkouts. Claude Code sessions used a read-only deploy key: their
+  background fetches succeeded, and GitHub refused their pushes. The
+  developer's own key needs a passphrase. Stage 4 input:
+  - The history push that `pre-push` starts fails when the key needs a
+    passphrase, and nothing tells the user. `ctx sync` from a terminal
+    pushes.
+  - `ctx doctor` reports that failure as a failed Claude Code hook, and still
+    shows sync as OK. It also counts against the exit's "no hook failure".
+  - A session enters the history ref only when it ends. A push while it is
+    open shares the commit's link but not the session. The other checkout
+    then shows only `no session '<id>'`.
+  - When two sessions were active at commit time, `ctx why` lists them by
+    start time, so a session that did not touch the line can come first.
+  - `ctx sync --dry-run` prints the same output as `ctx sync --status`.
 - **Exit:** at least 30 real sessions with no hook failure and no blocked
   commit, and the benchmark result above. Defects found go into stage 4.
 - **Rust in the code graph:** a Rust language part, built after the sync test
