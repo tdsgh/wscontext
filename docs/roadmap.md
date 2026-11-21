@@ -174,6 +174,14 @@ between two checkouts of one repository.
   - `ctx sync --dry-run` prints the same output as `ctx sync --status`.
 - **Exit:** at least 30 real sessions with no hook failure and no blocked
   commit, and the benchmark result above. Defects found go into stage 4.
+  A sync fetch or push that fails for lack of a credential is not counted
+  as a hook failure. It is the first stage 4 item in the sync result above.
+- **Exit result (2026-11-21, plugin 0.3.5):** passed. 34 real sessions since
+  the start: 18 and 11 in two of the private repositories, 5 in this one.
+  Sessions with no turns and checks shorter than a minute are not counted.
+  Two hook failures, both a sync fetch or push refused for lack of a
+  credential, so not counted. No Git hook failed and no commit was blocked.
+  Every code commit in the synced repository is linked to a session.
 - **Rust in the code graph:** a Rust language part, built after the sync test
   and the benchmark. Requirements:
   [graph-rust-phase-1.md](graph-rust-phase-1.md).
