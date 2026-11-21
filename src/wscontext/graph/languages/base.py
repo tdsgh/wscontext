@@ -27,6 +27,9 @@ class Definition:
     signature: str
     # qualname of the enclosing definition
     parent: str | None
+    # set by a part for a definition that is a test by the language's in-file rules; file-level
+    # rules stay in `is_test`
+    test: bool = False
 
 
 @dataclass(frozen=True)

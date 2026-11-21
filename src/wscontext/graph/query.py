@@ -16,6 +16,8 @@ class Symbol:
     signature: str
     # qualname of the enclosing definition
     parent: str | None
+    # a test by the language's in-file rules
+    test: bool
 
 
 @dataclass(frozen=True)
@@ -49,7 +51,7 @@ class Resolved:
 
 
 _SYMBOLS = ("SELECT s.id, s.path, s.name, s.qualname, s.kind, s.start_line, s.end_line, "
-            "s.signature, p.qualname FROM symbols s LEFT JOIN symbols p ON p.id = s.parent_id ")
+            "s.signature, p.qualname, s.test FROM symbols s LEFT JOIN symbols p ON p.id = s.parent_id ")
 
 
 def _symbols(conn: sqlite3.Connection, where: str, params: tuple) -> list[Symbol]:
@@ -187,7 +189,7 @@ def callers_of(conn: sqlite3.Connection, name: str) -> list[Call]:
     call may be to any definition that shares it (see `name_count`)."""
     rows = conn.execute(
         "SELECT c.path, c.line, s.id, s.path, s.name, s.qualname, s.kind, s.start_line, "
-        "s.end_line, s.signature, p.qualname FROM calls c "
+        "s.end_line, s.signature, p.qualname, s.test FROM calls c "
         "LEFT JOIN symbols s ON s.id = c.caller_id LEFT JOIN symbols p ON p.id = s.parent_id "
         "WHERE c.name = ? ORDER BY c.path, c.line, s.id", (name,))
     return [Call(path, line, Symbol(*sym) if sym[0] is not None else None)

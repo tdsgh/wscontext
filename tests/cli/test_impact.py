@@ -152,3 +152,92 @@ def test_impact_does_not_list_a_committed_session_twice(world, capsys):
     assert ids == ["sess-one"]
     row = next(r for r in data["results"] if r["type"] == "session")
     assert row["shas"] == [world.c1]
+
+
+RUST_LIB = """\
+pub fn f() -> i32 {
+    1
+}
+
+pub fn g() -> i32 {
+    f() + 1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn f_works() {
+        assert_eq!(f(), 1);
+    }
+}
+"""
+
+
+def _rust(world):
+    (world.repo / "src" / "lib.rs").write_text(RUST_LIB)
+    (world.repo / "src" / "main.rs").write_text("fn main() {\n    f();\n}\n")
+
+
+def _by_type(data):
+    out: dict[str, list] = {}
+    for r in data["results"]:
+        out.setdefault(r["type"], []).append(r)
+    return out
+
+
+def test_impact_on_a_rust_name_lists_the_in_file_test_under_tests(world, capsys):
+    _rust(world)
+    by_type = _by_type(run_json(world, capsys, "impact", "src/lib.rs#f"))
+    assert sorted(r["qualname"] for r in by_type["caller"]) == ["g", "main"]
+    tests = [r for r in by_type["test"] if r["kind"] == "caller"]
+    assert [(r["path"], r["qualname"]) for r in tests] == [("src/lib.rs", "tests.f_works")]
+
+
+def test_impact_on_a_rust_file_keeps_in_file_tests_and_skips_other_same_file_calls(world, capsys):
+    _rust(world)
+    by_type = _by_type(run_json(world, capsys, "impact", "src/lib.rs"))
+    assert [r["qualname"] for r in by_type["caller"]] == ["main"]
+    assert [r["qualname"] for r in by_type["test"] if r["kind"] == "caller"] == ["tests.f_works"]
+
+
+def test_impact_on_a_python_file_still_skips_every_same_file_call(world, capsys):
+    (world.repo / "src" / "app.py").write_text(
+        "def alpha():\n    return 1\n\n\ndef beta():\n    return alpha()\n\n\n"
+        "def test_alpha():\n    assert alpha() == 1\n")
+    by_type = _by_type(run_json(world, capsys, "impact", "src/app.py"))
+    assert "caller" not in by_type
+    assert not [r for r in by_type.get("test", []) if r["kind"] == "caller"]
+
+
+def test_impact_answers_for_one_qualname_defined_twice_in_a_rust_file(world, capsys):
+    (world.repo / "src" / "fmt.rs").write_text(
+        "struct Foo;\n\nimpl Display for Foo {\n    fn fmt(&self) -> i32 {\n        1\n    }\n}\n\n"
+        "impl Debug for Foo {\n    fn fmt(&self) -> i32 {\n        2\n    }\n}\n")
+    (world.repo / "src" / "use_fmt.rs").write_text("fn show(x: Foo) {\n    x.fmt();\n}\n")
+    data = run_json(world, capsys, "impact", "src/fmt.rs#Foo.fmt")
+    assert "ambiguous" not in data
+    head = data["results"][0]
+    assert head["type"] == "target" and head["qualname"] == "Foo.fmt"
+    assert head["definitions"] == [{"start": 4, "end": 6}, {"start": 10, "end": 12}]
+    assert "lines 4-6, 10-12" in "\n".join(head["body"])
+    assert [r["qualname"] for r in data["results"] if r["type"] == "caller"] == ["show"]
+    _, text, _ = world.ctx(capsys, "impact", "src/fmt.rs#Foo.fmt")
+    assert "lines 4-6, 10-12" in text
+
+
+def test_impact_answers_for_a_python_property_and_its_setter_as_one_target(world, capsys):
+    (world.repo / "src" / "prop.py").write_text(
+        "class A:\n    @property\n    def x(self):\n        return 1\n\n"
+        "    @x.setter\n    def x(self, v):\n        pass\n")
+    data = run_json(world, capsys, "impact", "src/prop.py#A.x")
+    assert "ambiguous" not in data
+    assert len(data["results"][0]["definitions"]) == 2
+
+
+def test_impact_with_different_qualnames_still_lists_candidates(world, capsys):
+    (world.repo / "src" / "two.py").write_text(
+        "class A:\n    def go(self):\n        pass\n\n\nclass B:\n    def go(self):\n        pass\n")
+    code, out, _ = world.ctx(capsys, "impact", "src/two.py#go", "--json")
+    assert code == 1 and json.loads(out)["ambiguous"] is True

@@ -247,3 +247,14 @@ def test_why_flags_a_parse_error(world, capsys):
     (world.repo / "src" / "bad.py").write_text("def broken(:\n    pass\n")
     data = run_json(world, capsys, "why", "src/app.py#alpha")
     assert data["note"] and "parse-errors" in data["note"]
+
+
+def test_why_on_one_qualname_defined_twice_names_the_line_ranges(world, capsys):
+    (world.repo / "src" / "prop.py").write_text(
+        "class A:\n    @property\n    def x(self):\n        return 1\n\n"
+        "    @x.setter\n    def x(self, v):\n        pass\n")
+    code, out, _ = world.ctx(capsys, "why", "src/prop.py#A.x", "--json")
+    data = json.loads(out)
+    assert code == 1 and data["ambiguous"] is True
+    assert "rerun `ctx why` with a line range" in data["note"]
+    assert "`src/prop.py:2-4`" in data["note"] and "`src/prop.py:6-8`" in data["note"]

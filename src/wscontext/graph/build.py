@@ -167,8 +167,9 @@ def _put_facts(conn: sqlite3.Connection, path: str, part: LanguagePart, facts: F
         parent = _owner(by_qualname.get(d.parent, []), d.start) if d.parent else None
         cur = conn.execute(
             "INSERT INTO symbols(path, name, qualname, kind, start_line, end_line, signature, "
-            "parent_id) VALUES(?,?,?,?,?,?,?,?)",
-            (path, d.name, d.qualname, d.kind, d.start, d.end, d.signature, parent))
+            "parent_id, test) VALUES(?,?,?,?,?,?,?,?,?)",
+            (path, d.name, d.qualname, d.kind, d.start, d.end, d.signature, parent,
+             int(d.test)))
         by_qualname.setdefault(d.qualname, []).append((cur.lastrowid, d.start, d.end))
     _insert_imports(conn, path, part, facts.imports, files)
     conn.executemany(

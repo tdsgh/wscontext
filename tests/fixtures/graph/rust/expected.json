@@ -1,0 +1,763 @@
+{
+ "benches/speed.rs": {
+  "definitions": [
+   {
+    "name": "bench",
+    "qualname": "bench",
+    "kind": "function",
+    "start": 3,
+    "end": 5,
+    "signature": "fn bench()",
+    "parent": null,
+    "test": false
+   }
+  ],
+  "imports": [
+   {
+    "spec": "fixture::total",
+    "names": [],
+    "line": 1
+   }
+  ],
+  "calls": [
+   {
+    "name": "total",
+    "line": 4,
+    "caller": "bench"
+   }
+  ],
+  "error": null
+ },
+ "broken.rs": {
+  "definitions": [
+   {
+    "name": "good",
+    "qualname": "good",
+    "kind": "function",
+    "start": 1,
+    "end": 3,
+    "signature": "fn good() -> u8",
+    "parent": null,
+    "test": false
+   },
+   {
+    "name": "bad",
+    "qualname": "bad",
+    "kind": "function",
+    "start": 5,
+    "end": 7,
+    "signature": "fn bad(",
+    "parent": null,
+    "test": false
+   },
+   {
+    "name": "after",
+    "qualname": "after",
+    "kind": "function",
+    "start": 9,
+    "end": 11,
+    "signature": "fn after() -> u8",
+    "parent": null,
+    "test": false
+   }
+  ],
+  "imports": [],
+  "calls": [
+   {
+    "name": "good",
+    "line": 6,
+    "caller": "bad"
+   },
+   {
+    "name": "good",
+    "line": 10,
+    "caller": "after"
+   }
+  ],
+  "error": "syntax error at line 5"
+ },
+ "src/geometry/inner.rs": {
+  "definitions": [
+   {
+    "name": "Point",
+    "qualname": "Point",
+    "kind": "type",
+    "start": 3,
+    "end": 3,
+    "signature": "pub struct Point",
+    "parent": null,
+    "test": false
+   },
+   {
+    "name": "distance",
+    "qualname": "distance",
+    "kind": "function",
+    "start": 5,
+    "end": 7,
+    "signature": "pub fn distance() -> f64",
+    "parent": null,
+    "test": false
+   }
+  ],
+  "imports": [
+   {
+    "spec": "super::Line",
+    "names": [],
+    "line": 1
+   }
+  ],
+  "calls": [],
+  "error": null
+ },
+ "src/lib.rs": {
+  "definitions": [
+   {
+    "name": "Foo",
+    "qualname": "Foo",
+    "kind": "type",
+    "start": 15,
+    "end": 19,
+    "signature": "pub struct Foo<T>",
+    "parent": null,
+    "test": false
+   },
+   {
+    "name": "make",
+    "qualname": "make",
+    "kind": "function",
+    "start": 22,
+    "end": 29,
+    "signature": "pub fn make<T: Clone>(size: T) -> Foo<T> where T: Copy,",
+    "parent": null,
+    "test": false
+   },
+   {
+    "name": "new",
+    "qualname": "Foo.new",
+    "kind": "method",
+    "start": 32,
+    "end": 34,
+    "signature": "pub fn new(size: T) -> Self",
+    "parent": "Foo",
+    "test": false
+   },
+   {
+    "name": "fmt",
+    "qualname": "Foo.fmt",
+    "kind": "method",
+    "start": 38,
+    "end": 40,
+    "signature": "fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result",
+    "parent": "Foo",
+    "test": false
+   },
+   {
+    "name": "fmt",
+    "qualname": "Foo.fmt",
+    "kind": "method",
+    "start": 44,
+    "end": 46,
+    "signature": "fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result",
+    "parent": "Foo",
+    "test": false
+   },
+   {
+    "name": "Area",
+    "qualname": "Area",
+    "kind": "type",
+    "start": 49,
+    "end": 58,
+    "signature": "pub trait Area",
+    "parent": null,
+    "test": false
+   },
+   {
+    "name": "area",
+    "qualname": "Area.area",
+    "kind": "method",
+    "start": 53,
+    "end": 53,
+    "signature": "fn area(&self) -> f64",
+    "parent": "Area",
+    "test": false
+   },
+   {
+    "name": "double",
+    "qualname": "Area.double",
+    "kind": "method",
+    "start": 55,
+    "end": 57,
+    "signature": "fn double(&self) -> f64",
+    "parent": "Area",
+    "test": false
+   },
+   {
+    "name": "Bits",
+    "qualname": "Bits",
+    "kind": "type",
+    "start": 60,
+    "end": 64,
+    "signature": "pub union Bits",
+    "parent": null,
+    "test": false
+   },
+   {
+    "name": "Pair",
+    "qualname": "Pair",
+    "kind": "type",
+    "start": 66,
+    "end": 66,
+    "signature": "pub type Pair<T> = (T, T)",
+    "parent": null,
+    "test": false
+   },
+   {
+    "name": "square",
+    "qualname": "square",
+    "kind": "function",
+    "start": 71,
+    "end": 75,
+    "signature": "macro_rules! square",
+    "parent": null,
+    "test": false
+   },
+   {
+    "name": "total",
+    "qualname": "total",
+    "kind": "function",
+    "start": 77,
+    "end": 85,
+    "signature": "pub fn total(items: &[u8]) -> u32",
+    "parent": null,
+    "test": false
+   },
+   {
+    "name": "add",
+    "qualname": "total.add",
+    "kind": "function",
+    "start": 79,
+    "end": 81,
+    "signature": "fn add(a: u32, b: &u8) -> u32",
+    "parent": "total",
+    "test": false
+   },
+   {
+    "name": "Line",
+    "qualname": "geometry.Line",
+    "kind": "type",
+    "start": 94,
+    "end": 94,
+    "signature": "pub struct Line",
+    "parent": null,
+    "test": false
+   },
+   {
+    "name": "length",
+    "qualname": "geometry.Line.length",
+    "kind": "method",
+    "start": 97,
+    "end": 99,
+    "signature": "pub fn length(&self) -> f64",
+    "parent": "geometry.Line",
+    "test": false
+   },
+   {
+    "name": "deep",
+    "qualname": "geometry.nested.deep",
+    "kind": "function",
+    "start": 106,
+    "end": 106,
+    "signature": "pub fn deep()",
+    "parent": null,
+    "test": false
+   },
+   {
+    "name": "fixture",
+    "qualname": "tests.fixture",
+    "kind": "function",
+    "start": 114,
+    "end": 116,
+    "signature": "fn fixture() -> Foo<u8>",
+    "parent": null,
+    "test": true
+   },
+   {
+    "name": "makes_a_foo",
+    "qualname": "tests.makes_a_foo",
+    "kind": "function",
+    "start": 118,
+    "end": 121,
+    "signature": "fn makes_a_foo()",
+    "parent": null,
+    "test": true
+   },
+   {
+    "name": "runs_async",
+    "qualname": "tests.runs_async",
+    "kind": "function",
+    "start": 123,
+    "end": 126,
+    "signature": "async fn runs_async()",
+    "parent": null,
+    "test": true
+   }
+  ],
+  "imports": [
+   {
+    "spec": "mod shapes",
+    "names": [],
+    "line": 3
+   },
+   {
+    "spec": "mod util",
+    "names": [],
+    "line": 4
+   },
+   {
+    "spec": "mod renamed",
+    "names": [],
+    "line": 6
+   },
+   {
+    "spec": "crate::shapes::Circle",
+    "names": [],
+    "line": 8
+   },
+   {
+    "spec": "crate::shapes::circle",
+    "names": [],
+    "line": 8
+   },
+   {
+    "spec": "crate::shapes::circle::area",
+    "names": [],
+    "line": 8
+   },
+   {
+    "spec": "crate::shapes::*",
+    "names": [],
+    "line": 8
+   },
+   {
+    "spec": "self::util::helper",
+    "names": [],
+    "line": 9
+   },
+   {
+    "spec": "std::fmt",
+    "names": [],
+    "line": 10
+   },
+   {
+    "spec": "std::fmt::Debug",
+    "names": [],
+    "line": 10
+   },
+   {
+    "spec": "std::fmt::Display",
+    "names": [],
+    "line": 10
+   },
+   {
+    "spec": "serde::Serialize",
+    "names": [],
+    "line": 11
+   },
+   {
+    "spec": "sibling_crate::Thing",
+    "names": [],
+    "line": 12
+   },
+   {
+    "spec": "alloc",
+    "names": [],
+    "line": 13
+   },
+   {
+    "spec": "mod geometry::inner",
+    "names": [],
+    "line": 88
+   },
+   {
+    "spec": "self::Foo",
+    "names": [],
+    "line": 90
+   },
+   {
+    "spec": "self::geometry::inner::Point",
+    "names": [],
+    "line": 91
+   },
+   {
+    "spec": "super::outside",
+    "names": [],
+    "line": 92
+   },
+   {
+    "spec": "self::make",
+    "names": [],
+    "line": 103
+   },
+   {
+    "spec": "self::geometry::Line",
+    "names": [],
+    "line": 104
+   },
+   {
+    "spec": "self::*",
+    "names": [],
+    "line": 112
+   }
+  ],
+  "calls": [
+   {
+    "name": "new",
+    "line": 27,
+    "caller": "make"
+   },
+   {
+    "name": "build",
+    "line": 28,
+    "caller": "make"
+   },
+   {
+    "name": "write",
+    "line": 39,
+    "caller": "Foo.fmt"
+   },
+   {
+    "name": "write_str",
+    "line": 45,
+    "caller": "Foo.fmt"
+   },
+   {
+    "name": "helper",
+    "line": 45,
+    "caller": "Foo.fmt"
+   },
+   {
+    "name": "area",
+    "line": 56,
+    "caller": "Area.double"
+   },
+   {
+    "name": "helper",
+    "line": 73,
+    "caller": "square"
+   },
+   {
+    "name": "square",
+    "line": 80,
+    "caller": "total.add"
+   },
+   {
+    "name": "parse",
+    "line": 82,
+    "caller": "total"
+   },
+   {
+    "name": "vec",
+    "line": 83,
+    "caller": "total"
+   },
+   {
+    "name": "make",
+    "line": 83,
+    "caller": "total"
+   },
+   {
+    "name": "new",
+    "line": 83,
+    "caller": "total"
+   },
+   {
+    "name": "fold",
+    "line": 84,
+    "caller": "total"
+   },
+   {
+    "name": "iter",
+    "line": 84,
+    "caller": "total"
+   },
+   {
+    "name": "distance",
+    "line": 98,
+    "caller": "geometry.Line.length"
+   },
+   {
+    "name": "make",
+    "line": 115,
+    "caller": "tests.fixture"
+   },
+   {
+    "name": "assert_eq",
+    "line": 120,
+    "caller": "tests.makes_a_foo"
+   },
+   {
+    "name": "fixture",
+    "line": 120,
+    "caller": "tests.makes_a_foo"
+   },
+   {
+    "name": "total",
+    "line": 120,
+    "caller": "tests.makes_a_foo"
+   },
+   {
+    "name": "assert",
+    "line": 125,
+    "caller": "tests.runs_async"
+   },
+   {
+    "name": "check",
+    "line": 125,
+    "caller": "tests.runs_async"
+   },
+   {
+    "name": "make",
+    "line": 125,
+    "caller": "tests.runs_async"
+   }
+  ],
+  "error": null
+ },
+ "src/main.rs": {
+  "definitions": [
+   {
+    "name": "main",
+    "qualname": "main",
+    "kind": "function",
+    "start": 6,
+    "end": 8,
+    "signature": "fn main()",
+    "parent": null,
+    "test": false
+   }
+  ],
+  "imports": [
+   {
+    "spec": "mod cli",
+    "names": [],
+    "line": 1
+   },
+   {
+    "spec": "crate::cli::run",
+    "names": [],
+    "line": 3
+   },
+   {
+    "spec": "fixture::make",
+    "names": [],
+    "line": 4
+   }
+  ],
+  "calls": [
+   {
+    "name": "run",
+    "line": 7,
+    "caller": "main"
+   },
+   {
+    "name": "make",
+    "line": 7,
+    "caller": "main"
+   }
+  ],
+  "error": null
+ },
+ "src/shapes/circle.rs": {
+  "definitions": [
+   {
+    "name": "area",
+    "qualname": "area",
+    "kind": "function",
+    "start": 5,
+    "end": 7,
+    "signature": "pub fn area(radius: f64) -> f64",
+    "parent": null,
+    "test": false
+   }
+  ],
+  "imports": [
+   {
+    "spec": "super::Circle",
+    "names": [],
+    "line": 1
+   },
+   {
+    "spec": "super::super::util",
+    "names": [],
+    "line": 2
+   },
+   {
+    "spec": "self::detail::*",
+    "names": [],
+    "line": 3
+   }
+  ],
+  "calls": [],
+  "error": null
+ },
+ "src/shapes.rs": {
+  "definitions": [
+   {
+    "name": "Circle",
+    "qualname": "Circle",
+    "kind": "type",
+    "start": 8,
+    "end": 10,
+    "signature": "pub struct Circle",
+    "parent": null,
+    "test": false
+   },
+   {
+    "name": "area",
+    "qualname": "Circle.area",
+    "kind": "method",
+    "start": 16,
+    "end": 18,
+    "signature": "fn area(&self) -> f64",
+    "parent": "Circle",
+    "test": false
+   },
+   {
+    "name": "Kind",
+    "qualname": "Kind",
+    "kind": "type",
+    "start": 21,
+    "end": 24,
+    "signature": "pub enum Kind",
+    "parent": null,
+    "test": false
+   }
+  ],
+  "imports": [
+   {
+    "spec": "mod circle",
+    "names": [],
+    "line": 3
+   },
+   {
+    "spec": "crate::util::helper",
+    "names": [],
+    "line": 5
+   },
+   {
+    "spec": "super::Foo",
+    "names": [],
+    "line": 6
+   }
+  ],
+  "calls": [
+   {
+    "name": "area",
+    "line": 17,
+    "caller": "Circle.area"
+   }
+  ],
+  "error": null
+ },
+ "src/util/mod.rs": {
+  "definitions": [
+   {
+    "name": "helper",
+    "qualname": "helper",
+    "kind": "function",
+    "start": 3,
+    "end": 5,
+    "signature": "pub fn helper(x: u8) -> String",
+    "parent": null,
+    "test": false
+   }
+  ],
+  "imports": [
+   {
+    "spec": "super::shapes::Circle",
+    "names": [],
+    "line": 1
+   }
+  ],
+  "calls": [
+   {
+    "name": "format",
+    "line": 4,
+    "caller": "helper"
+   }
+  ],
+  "error": null
+ },
+ "tests/common/mod.rs": {
+  "definitions": [
+   {
+    "name": "setup",
+    "qualname": "setup",
+    "kind": "function",
+    "start": 3,
+    "end": 3,
+    "signature": "pub fn setup()",
+    "parent": null,
+    "test": false
+   }
+  ],
+  "imports": [
+   {
+    "spec": "crate::helpers",
+    "names": [],
+    "line": 1
+   }
+  ],
+  "calls": [],
+  "error": null
+ },
+ "tests/integration.rs": {
+  "definitions": [
+   {
+    "name": "integration",
+    "qualname": "integration",
+    "kind": "function",
+    "start": 6,
+    "end": 10,
+    "signature": "fn integration()",
+    "parent": null,
+    "test": true
+   }
+  ],
+  "imports": [
+   {
+    "spec": "mod common",
+    "names": [],
+    "line": 1
+   },
+   {
+    "spec": "crate::common::setup",
+    "names": [],
+    "line": 3
+   },
+   {
+    "spec": "fixture::Foo",
+    "names": [],
+    "line": 4
+   }
+  ],
+  "calls": [
+   {
+    "name": "setup",
+    "line": 8,
+    "caller": "integration"
+   },
+   {
+    "name": "assert_eq",
+    "line": 9,
+    "caller": "integration"
+   },
+   {
+    "name": "make",
+    "line": 9,
+    "caller": "integration"
+   }
+  ],
+  "error": null
+ }
+}

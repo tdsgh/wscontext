@@ -3,7 +3,8 @@ from types import SimpleNamespace
 import pytest
 
 from conftest import run_git
-from graph_support import (config, snapshot, store, table, unknown_language, write)  # noqa: F401
+from graph_support import (config, mark, snapshot, store, table,  # noqa: F401
+                           unknown_language, write)
 from wscontext.config import Config, GraphConfig
 from wscontext.graph import build, db, history, query
 from wscontext.graph.build import refresh
@@ -248,3 +249,57 @@ def test_changing_exclude_recounts_without_a_new_commit(store):
     assert counted(store) == ["a.py", "b.py"]
     refresh(store, config())
     assert len(pairs(store)) == 3
+
+
+def _marked_history(store):
+    commit(store, {"m.mark": "def a():\n    return 1\n", "n.py": "x = 1\n"})
+    sha = commit(store, {"m.mark": "def a():\n    return 2\n", "n.py": "x = 2\n"})
+    link(store, sha, "s1")
+    return sha
+
+
+def test_a_part_switched_on_later_links_past_commits_to_its_definitions(store, mark):
+    sha = _marked_history(store)
+    refresh(store, config())
+    assert touched(store) == [("s1", sha[:7], "m.mark", ""), ("s1", sha[:7], "n.py", "")]
+
+    assert refresh(store, config("python", "mark")).complete
+    assert touched(store) == [("s1", sha[:7], "m.mark", ""), ("s1", sha[:7], "m.mark", "a"),
+                              ("s1", sha[:7], "n.py", "")]
+
+
+def test_raising_a_part_version_links_past_commits_again(store, mark):
+    _marked_history(store)
+    cfg = config("python", "mark")
+    refresh(store, cfg)
+    conn = db.connect(store)
+    conn.execute("DELETE FROM touched WHERE qualname = 'a'")
+    conn.close()
+    refresh(store, cfg)
+    assert not [r for r in touched(store) if r[3] == "a"]
+
+    mark.version = 2
+    refresh(store, cfg)
+    assert [r[3] for r in touched(store) if r[2] == "m.mark"] == ["", "a"]
+
+
+def test_switching_a_part_off_keeps_only_file_level_links_for_it(store, mark):
+    sha = _marked_history(store)
+    refresh(store, config("python", "mark"))
+    assert ("s1", sha[:7], "m.mark", "a") in touched(store)
+
+    refresh(store, config())
+    assert touched(store) == [("s1", sha[:7], "m.mark", ""), ("s1", sha[:7], "n.py", "")]
+
+
+def test_unchanged_parts_leave_the_links_alone(store, mark):
+    _marked_history(store)
+    cfg = config("python", "mark")
+    refresh(store, cfg)
+    conn = db.connect(store)
+    conn.execute("UPDATE touched SET committed_at = 'kept'")
+    conn.close()
+
+    refresh(store, cfg)
+
+    assert {r[0] for r in table(store, "SELECT committed_at FROM touched")} == {"kept"}

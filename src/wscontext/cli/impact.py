@@ -38,22 +38,27 @@ def _target(store: StorePaths, text: str) -> str:
 
 def _callers(conn, symbols: list[query.Symbol], path: str, depth: int) -> list[dict]:
     """Callers by short name, breadth first. A file target (no symbols) takes the names of its
-    top-level definitions and leaves out calls from inside the file."""
+    top-level definitions and leaves out calls from inside the file, except from definitions
+    marked as tests. Symbols that share one qualname are answered for as one target."""
     if symbols:
-        start = {s.name: s.id for s in symbols}
+        start: dict[str, set[int]] = {}
+        for s in symbols:
+            start.setdefault(s.name, set()).add(s.id)
     else:
         outline = query.file_outline(conn, path)
-        start = {d.name: None for d in outline.definitions if d.parent is None} if outline else {}
+        start = {d.name: set() for d in outline.definitions if d.parent is None} if outline else {}
     found: dict[tuple, dict] = {}
     seen, names = set(), start
     for level in range(1, depth + 1):
-        nxt: dict[str, int | None] = {}
+        nxt: dict[str, set[int]] = {}
         for name, own in sorted(names.items()):
             shared = query.name_count(conn, name)
             for call in query.callers_of(conn, name):
                 caller, cpath, line = call.caller, call.path, call.line
-                if (caller is not None and caller.id == own) or (not symbols and level == 1
-                                                                 and cpath == path):
+                if caller is not None and caller.id in own:
+                    continue
+                if (not symbols and level == 1 and cpath == path
+                        and not (caller is not None and caller.test)):
                     continue
                 qualname = caller.qualname if caller else None
                 key = (cpath, qualname)
@@ -66,9 +71,10 @@ def _callers(conn, symbols: list[query.Symbol], path: str, depth: int) -> list[d
                 found[key] = {"path": cpath, "qualname": qualname,
                               "start": caller.start if caller else None,
                               "end": caller.end if caller else None,
+                              "test": caller.test if caller else False,
                               "lines": [line], "calls": name, "shared": shared, "depth": level}
                 if caller is not None:
-                    nxt[caller.name] = caller.id
+                    nxt[caller.name] = {caller.id}
         names = {n: i for n, i in nxt.items() if n not in start}
     return list(found.values())
 
@@ -106,7 +112,8 @@ def run(args, store: StorePaths, config: Config) -> Reply:
                          "is not supported", args.json, flags=flags)
         if not resolved.symbols and ("#" in args.target or resolved.path is None):
             return error(f"no definition matches {args.target!r}", args.json, flags=flags)
-        if len(resolved.symbols) > 1:
+        same = len({(s.path, s.qualname) for s in resolved.symbols}) == 1
+        if len(resolved.symbols) > 1 and not same:
             blocks = [definition_block(s) for s in resolved.symbols]
             pick = "Several definitions match; rerun `ctx impact` with one of them."
             text = render(command, blocks, full=args.full, as_json=args.json,
@@ -123,7 +130,7 @@ def run(args, store: StorePaths, config: Config) -> Reply:
             part = by_ext.get(PurePosixPath(p).suffix.lower())
             return part is not None and part.is_test(p)
 
-        callers = _callers(conn, [symbol] if symbol else [], path, args.depth)
+        callers = _callers(conn, resolved.symbols, path, args.depth)
         importers = list({e.path: e for e in outline.importers}.values()) if outline else []
         cochange = query.cochanged(conn, path)
         links = query.sessions_for(conn, path, qualname)
@@ -132,7 +139,7 @@ def run(args, store: StorePaths, config: Config) -> Reply:
     sections: dict[str, list[Block]] = {"callers": [], "tests": [], "importers": [],
                                         "co-changed files": [], "sessions": []}
     for c in callers:
-        test = is_test(c["path"])
+        test = c["test"] or is_test(c["path"])
         sections["tests" if test else "callers"].append(_caller_block(c, test))
     for e in importers:
         test = is_test(e.path)
@@ -170,6 +177,11 @@ def run(args, store: StorePaths, config: Config) -> Reply:
         "file", path, outline.language if outline else "", None,
         [f"{len(outline.definitions)} definitions"] if outline else [], [f"ctx code {path}"]))
     head.type = "target"
+    if len(resolved.symbols) > 1:
+        ranges = ", ".join(f"{s.start}-{s.end}" for s in resolved.symbols)
+        head.body.append(f"{len(resolved.symbols)} definitions share this name in {path}: "
+                         f"lines {ranges}; answered for all of them")
+        head.extra["definitions"] = [{"start": s.start, "end": s.end} for s in resolved.symbols]
     blocks.append(head)
     for blist in sections.values():
         shown = blist if limit is None else blist[:limit]

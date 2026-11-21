@@ -27,7 +27,8 @@ Each language the graph reads is one part behind the contract in
         `class`, `method` or `type`, qualnames `Class.method` and
         `outer.inner`, 1-based lines, the start including decorators; imports
         as written; calls by short name with the enclosing definition's
-        qualname, or None at file level.
+        qualname, or None at file level. Set `test` on a definition only when it is a
+        test by in-file rules; leave it `False` when `is_test` covers the file.
   - [ ] `resolve_import` returns repository paths only, through `files`
         (`path in files`, `files.ending_with(suffix)`); an unresolved import
         returns `[]`.
@@ -52,3 +53,5 @@ Each language the graph reads is one part behind the contract in
 - Removing a language: delete its module, registry line, fixtures, test file and
   grammar dependency. A `[graph] languages` entry that names it then shows as
   unavailable.
+- Raising `version`, or switching a language on or off, re-links every past
+  commit on the next refresh.

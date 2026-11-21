@@ -62,7 +62,7 @@ class StoreConfig:
 @dataclass(frozen=True)
 class GraphConfig:
     # an unknown language name is kept so the health check can report it
-    languages: tuple[str, ...] = ("python", "typescript", "javascript")
+    languages: tuple[str, ...] = ("python", "typescript", "javascript", "rust")
     # glob patterns on repository paths
     exclude: tuple[str, ...] = ()
     # the longest a command waits for the graph

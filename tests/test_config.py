@@ -72,7 +72,7 @@ def test_retrieval_store_and_capture_overrides(tmp_path):
 
 def test_graph_defaults():
     g = Config().graph
-    assert g.languages == ("python", "typescript", "javascript")
+    assert g.languages == ("python", "typescript", "javascript", "rust")
     assert g.exclude == () and g.query_budget_ms == 5000 and g.cochange_commits == 2000
 
 

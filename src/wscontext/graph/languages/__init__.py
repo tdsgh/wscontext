@@ -13,6 +13,7 @@ REGISTRY: dict[str, str] = {
     "python": "wscontext.graph.languages.python",
     "typescript": "wscontext.graph.languages.typescript",
     "javascript": "wscontext.graph.languages.javascript",
+    "rust": "wscontext.graph.languages.rust",
 }
 
 

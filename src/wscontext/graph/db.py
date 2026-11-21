@@ -5,7 +5,7 @@ from pathlib import Path
 
 from wscontext.store.paths import StorePaths
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -14,7 +14,8 @@ CREATE TABLE files(path TEXT PRIMARY KEY, language TEXT NOT NULL, lang_version I
                    status TEXT NOT NULL, error TEXT);
 CREATE TABLE symbols(id INTEGER PRIMARY KEY, path TEXT NOT NULL, name TEXT NOT NULL,
                      qualname TEXT NOT NULL, kind TEXT NOT NULL, start_line INTEGER NOT NULL,
-                     end_line INTEGER NOT NULL, signature TEXT NOT NULL, parent_id INTEGER);
+                     end_line INTEGER NOT NULL, signature TEXT NOT NULL, parent_id INTEGER,
+                     test INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX symbols_path ON symbols(path);
 CREATE INDEX symbols_name ON symbols(name);
 CREATE INDEX symbols_qualname ON symbols(qualname);

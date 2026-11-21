@@ -218,7 +218,8 @@ def _languages(config: Config) -> list[dict]:
             items.append(_item(f"language {name}", WARN, "unknown: wscontext has no part for it",
                                f"remove it from [graph] languages, or use one of: {', '.join(sorted(REGISTRY))}"))
         elif name not in enabled:
-            items.append(_item(f"language {name}", OK, "off"))
+            items.append({**_item(f"language {name}", OK, "off"),
+                          "fix": f'add "{name}" to [graph] languages in .wscontext/config.toml to read it'})
         elif name in failed:
             items.append(_item(f"language {name}", WARN, "on, but its grammar is unavailable",
                                "run any `ctx` command from the plugin to rebuild its environment; "

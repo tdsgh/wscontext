@@ -60,8 +60,8 @@ def test_skill_text_covers_search_and_the_new_figures():
 
 
 def test_plugin_version_is_0_3_4():
-    assert json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"] == "0.3.5"
-    assert 'version = "0.3.5"' in (ROOT / "pyproject.toml").read_text()
+    assert json.loads((ROOT / ".claude-plugin" / "plugin.json").read_text())["version"] == "0.4.0"
+    assert 'version = "0.4.0"' in (ROOT / "pyproject.toml").read_text()
 
 
 def test_skill_text_covers_the_graph_commands():

@@ -169,6 +169,19 @@ def link_sessions(store: StorePaths, conn: sqlite3.Connection, config: Config,
     left for a later refresh because the budget ran out. A commit not present in this clone is
     tried again at every refresh but is not counted: it may never arrive."""
     by_ext = {ext: p for p in parts for ext in p.extensions}
+    link_parts = ",".join(sorted(f"{p.name}:{p.version}" for p in parts))
+    stored = conn.execute("SELECT value FROM meta WHERE key='link_parts'").fetchone()
+    if stored is None or stored[0] != link_parts:
+        # the set of parts changed: every commit is linked again
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute("DELETE FROM touched")
+            conn.execute("DELETE FROM touched_done")
+            _set_meta(conn, {"link_parts": link_parts})
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
     checkpoints = store.records / "checkpoints"
     shas = sorted(p.stem for p in checkpoints.glob("*.json")) if checkpoints.is_dir() else []
 

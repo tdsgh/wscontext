@@ -2,6 +2,7 @@
 
 import sys
 import types
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -82,6 +83,18 @@ class ToyPart(LanguagePart):
         return False
 
 
+class MarkPart(ToyPart):
+    """`.mark` files, read like `.toy`; a definition whose name starts with `test_` is marked."""
+
+    name = "mark"
+    extensions = (".mark",)
+
+    def extract(self, tree, source):
+        facts = super().extract(tree, source)
+        return replace(facts, definitions=tuple(
+            replace(d, test=d.name.startswith("test_")) for d in facts.definitions))
+
+
 def register(monkeypatch, name: str, part: LanguagePart | None) -> None:
     """Put a module exposing `part` in the registry under `name`; None registers a module path
     that does not import."""
@@ -97,6 +110,13 @@ def register(monkeypatch, name: str, part: LanguagePart | None) -> None:
 def toy(monkeypatch) -> ToyPart:
     part = ToyPart()
     register(monkeypatch, "toy", part)
+    return part
+
+
+@pytest.fixture
+def mark(monkeypatch) -> MarkPart:
+    part = MarkPart()
+    register(monkeypatch, "mark", part)
     return part
 
 

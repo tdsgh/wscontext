@@ -6,9 +6,9 @@ import time
 import pytest
 
 from conftest import run_git
-from graph_support import (ToyPart, config, register, snapshot, store, table, toy,  # noqa: F401
-                           unknown_language, write)
-from wscontext.graph import db
+from graph_support import (ToyPart, config, mark, register, snapshot, store, table,  # noqa: F401
+                           toy, unknown_language, write)
+from wscontext.graph import db, query
 from wscontext.graph.build import MAX_FILE_BYTES, changed_files, rebuild, refresh
 from wscontext.graph.languages import load_parts
 from wscontext.graph.languages.base import LanguageUnavailable
@@ -358,3 +358,29 @@ def test_changed_files_counts_a_racy_row_until_its_mtime_ages(store):
     refresh(store, config())  # just written: stored with mtime 0
     assert changed_files(store, config()) == 1
     assert refresh(store, config()).parsed == 0  # same digest: nothing parsed, mtime kept at 0
+
+
+def test_a_definition_marked_as_a_test_keeps_the_mark(store, mark):
+    write(store, "a.mark", "def test_one():\n    pass\n\n\ndef helper():\n    pass\n")
+    refresh(store, config("python", "mark"))
+    assert table(store, "SELECT qualname, test FROM symbols ORDER BY id") == [
+        ("test_one", 1), ("helper", 0)]
+    conn = db.connect(store, readonly=True)
+    try:
+        assert [s.test for s in query.definitions(conn, "test_one")] == [True]
+        assert [s.test for s in query.definitions(conn, "helper")] == [False]
+    finally:
+        conn.close()
+
+
+def test_a_graph_file_with_schema_version_2_is_recreated(store):
+    write(store, "a.py", "def f():\n    pass\n")
+    refresh(store, config())
+    conn = db.connect(store)
+    conn.execute("UPDATE meta SET value='2' WHERE key='schema_version'")
+    conn.close()
+    with pytest.raises(db.GraphUnavailable):
+        db.connect(store, readonly=True)
+
+    assert refresh(store, config()).parsed == 1
+    assert table(store, "SELECT qualname, test FROM symbols") == [("f", 0)]

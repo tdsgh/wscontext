@@ -20,11 +20,11 @@ def stats(world, capsys, *argv):
 def test_code_view_without_a_graph_says_so_and_still_lists_languages(world, capsys):
     d = stats(world, capsys, "code")[0]
     assert d["graph"] is None and d["changed_files"] is None
-    assert d["languages"]["supported"] == ["javascript", "python", "typescript"]
-    assert d["languages"]["enabled"] == ["python", "typescript", "javascript"]
+    assert d["languages"]["supported"] == ["javascript", "python", "rust", "typescript"]
+    assert d["languages"]["enabled"] == ["python", "typescript", "javascript", "rust"]
     assert d["languages"]["unavailable"] == []
     _, out, _ = world.ctx(capsys, "stats", "code")
-    assert "switched on: python, typescript, javascript" in out
+    assert "switched on: python, typescript, javascript, rust" in out
     assert "no graph yet" in out and "files changed" not in out
 
 

@@ -30,7 +30,7 @@ session_warn_bytes = 10485760
 store_warn_bytes = 1073741824
 
 [graph]
-languages = ["python", "typescript", "javascript"]
+languages = ["python", "typescript", "javascript", "rust"]
 exclude = []
 # the longest a command waits for the graph
 query_budget_ms = 5000

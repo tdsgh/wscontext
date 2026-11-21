@@ -8,7 +8,8 @@
     "start": 1,
     "end": 3,
     "signature": "function good()",
-    "parent": null
+    "parent": null,
+    "test": false
    }
   ],
   "imports": [],
@@ -30,7 +31,8 @@
     "start": 13,
     "end": 16,
     "signature": "async function lazy()",
-    "parent": null
+    "parent": null,
+    "test": false
    }
   ],
   "imports": [
@@ -117,7 +119,8 @@
     "start": 1,
     "end": 3,
     "signature": "function helper(value = normalize(\"x\"))",
-    "parent": null
+    "parent": null,
+    "test": false
    },
    {
     "name": "ids",
@@ -126,7 +129,8 @@
     "start": 5,
     "end": 7,
     "signature": "function* ids()",
-    "parent": null
+    "parent": null,
+    "test": false
    },
    {
     "name": "area",
@@ -135,7 +139,8 @@
     "start": 9,
     "end": 14,
     "signature": "const area = async (w, h)",
-    "parent": null
+    "parent": null,
+    "test": false
    },
    {
     "name": "inner",
@@ -144,7 +149,8 @@
     "start": 10,
     "end": 12,
     "signature": "const inner = function ()",
-    "parent": "area"
+    "parent": "area",
+    "test": false
    },
    {
     "name": "short",
@@ -153,7 +159,8 @@
     "start": 16,
     "end": 16,
     "signature": "const short = (n)",
-    "parent": null
+    "parent": null,
+    "test": false
    },
    {
     "name": "a",
@@ -162,7 +169,8 @@
     "start": 18,
     "end": 18,
     "signature": "let a = ()",
-    "parent": null
+    "parent": null,
+    "test": false
    },
    {
     "name": "b",
@@ -171,7 +179,8 @@
     "start": 18,
     "end": 18,
     "signature": "let b = ()",
-    "parent": null
+    "parent": null,
+    "test": false
    },
    {
     "name": "Shape",
@@ -180,7 +189,8 @@
     "start": 20,
     "end": 46,
     "signature": "class Shape extends Base",
-    "parent": null
+    "parent": null,
+    "test": false
    },
    {
     "name": "handler",
@@ -189,7 +199,8 @@
     "start": 22,
     "end": 22,
     "signature": "handler = (e)",
-    "parent": "Shape"
+    "parent": "Shape",
+    "test": false
    },
    {
     "name": "constructor",
@@ -198,7 +209,8 @@
     "start": 24,
     "end": 27,
     "signature": "constructor(name)",
-    "parent": "Shape"
+    "parent": "Shape",
+    "test": false
    },
    {
     "name": "area",
@@ -207,7 +219,8 @@
     "start": 29,
     "end": 31,
     "signature": "area()",
-    "parent": "Shape"
+    "parent": "Shape",
+    "test": false
    },
    {
     "name": "label",
@@ -216,7 +229,8 @@
     "start": 33,
     "end": 35,
     "signature": "get label()",
-    "parent": "Shape"
+    "parent": "Shape",
+    "test": false
    },
    {
     "name": "create",
@@ -225,7 +239,8 @@
     "start": 37,
     "end": 39,
     "signature": "static create()",
-    "parent": "Shape"
+    "parent": "Shape",
+    "test": false
    },
    {
     "name": "#secret",
@@ -234,7 +249,8 @@
     "start": 41,
     "end": 43,
     "signature": "#secret()",
-    "parent": "Shape"
+    "parent": "Shape",
+    "test": false
    }
   ],
   "imports": [],
@@ -326,7 +342,8 @@
     "start": 3,
     "end": 6,
     "signature": "const View = ({ items })",
-    "parent": null
+    "parent": null,
+    "test": false
    },
    {
     "name": "render",
@@ -335,7 +352,8 @@
     "start": 8,
     "end": 10,
     "signature": "function render(item)",
-    "parent": null
+    "parent": null,
+    "test": false
    }
   ],
   "imports": [

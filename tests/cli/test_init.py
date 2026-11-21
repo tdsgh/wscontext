@@ -500,11 +500,11 @@ def test_doctor_reports_the_parser_languages_and_graph(repo, opts, capsys):
     ctx(capsys, *opts, "init")
     _, out, _ = ctx(capsys, *opts, "doctor")
     assert "[  OK] code parser: tree-sitter" in _doctor_line(out, "code parser")
-    for name in ("python", "typescript", "javascript"):
+    for name in ("python", "typescript", "javascript", "rust"):
         assert _doctor_line(out, f"language {name}").endswith(": on")
     assert "not built yet" in _doctor_line(out, "code graph")
     config = repo / ".wscontext" / "config.toml"
-    config.write_text(config.read_text().replace('"javascript"]', '"cobol"]'))
+    config.write_text(config.read_text().replace('"javascript", "rust"]', '"rust", "cobol"]'))
     _, out, _ = ctx(capsys, *opts, "doctor")
     assert _doctor_line(out, "language javascript").endswith(": off")
     assert "unknown" in _doctor_line(out, "language cobol")
@@ -515,6 +515,29 @@ def test_doctor_reports_the_parser_languages_and_graph(repo, opts, capsys):
     _, out, _ = ctx(capsys, *opts, "doctor")
     line = _doctor_line(out, "code graph")
     assert "1 files" in line and "last refresh 0 min ago" in line and "1 stale file" in line
+
+
+def test_init_writes_rust_into_the_new_config_and_doctor_reports_it_on(repo, opts, capsys):
+    ctx(capsys, *opts, "init")
+    config = (repo / ".wscontext" / "config.toml").read_text()
+    assert 'languages = ["python", "typescript", "javascript", "rust"]' in config
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    assert _doctor_line(out, "language rust").endswith(": on")
+
+
+def test_doctor_gives_the_fix_for_a_language_that_is_off(repo, opts, capsys):
+    ctx(capsys, *opts, "init")
+    config = repo / ".wscontext" / "config.toml"
+    config.write_text(config.read_text().replace(', "rust"]', ']'))
+    _, out, _ = ctx(capsys, *opts, "doctor")
+    lines = out.splitlines()
+    at = lines.index(_doctor_line(out, "language rust"))
+    assert lines[at].endswith(": off")
+    assert lines[at + 1].strip() == ('fix: add "rust" to [graph] languages in '
+                                     '.wscontext/config.toml to read it')
+    _, out, _ = ctx(capsys, *opts, "doctor", "--json")
+    item = next(c for c in json.loads(out)["checks"] if c["check"] == "language rust")
+    assert item["status"] == "ok" and "to read it" in item["fix"]
 
 
 def test_doctor_reports_a_language_whose_grammar_is_unavailable(repo, opts, capsys, monkeypatch):

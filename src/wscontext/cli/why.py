@@ -166,7 +166,11 @@ def _candidates(args, symbols, flags: list[str], caveats: str) -> Reply:
     blocks = [definition_block(s) for s in symbols]
     for b in blocks:
         b.links = b.links[1:]
-    pick = "Several definitions match; rerun `ctx why` with one of them as FILE#NAME."
+    if len({(x.path, x.qualname) for x in symbols}) == 1:
+        pick = ("Several definitions share this name; rerun `ctx why` with a line range: "
+                + ", ".join(f"`{x.path}:{x.start}-{x.end}`" for x in symbols) + ".")
+    else:
+        pick = "Several definitions match; rerun `ctx why` with one of them as FILE#NAME."
     text = render(f"ctx why {args.target}", blocks, full=args.full, as_json=args.json,
                   note="\n".join(x for x in (pick, caveats) if x),
                   meta={"target": args.target, "ambiguous": True, "flags": flags})
