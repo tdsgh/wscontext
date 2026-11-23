@@ -185,6 +185,14 @@ between two checkouts of one repository.
 - **Rust in the code graph:** a Rust language part, built after the sync test
   and the benchmark. Requirements:
   [graph-rust-phase-1.md](graph-rust-phase-1.md).
+- **Gate result (2026-11-23, plugin 0.4.1):** passed. The offline suite had 800
+  tests and no warnings. `acceptance/graph_rust.py` passed 8 of 8 scenarios and
+  uses no `claude -p`. `stage1.py` passed 13 of 13 (some went manual) and
+  `stage2.py` 10 of 10, both on 0.4.0. `stage3.py` passed 15 of 16 on 0.4.0.
+  Its `stats-code` scenario expected the old language list and passed on 0.4.1
+  after one line of the script was updated. The operator read a real run of
+  the repeated-name answer and asked for line-range links in `ctx why`. That
+  fix made 0.4.1. Deviations are listed in the build plan's closing notes.
 
 ## Import — past work in a repository already in progress
 

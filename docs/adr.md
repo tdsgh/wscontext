@@ -860,3 +860,99 @@ have a transcript. Sessions never prompted are reported as their own count
   the rule at read time.
 - A session record with no turns, no tool calls, no `ctx` calls and no stored
   transcript is not a session for any share.
+
+### ADR-050 — A definition can be marked as a test; `ctx impact` reads the mark
+
+**Decision.** `Definition` has a `test` field, set by a language part for a
+definition that is a test by the language's in-file rules
+(src/wscontext/graph/languages/base.py:30-32). `symbols` stores it as the
+`test` column, and graph schema version 3 adds it (src/wscontext/graph/db.py:8,
+15-18). Only the Rust part sets it. `is_test(path)` is unchanged and still
+decides test files for every language.
+
+**Implications.**
+- `ctx impact` lists a caller under `tests` when its file is a test file or its
+  calling definition has `test` set (src/wscontext/cli/impact.py:142).
+- On a file target, `ctx impact` skips calls made from inside the same file,
+  unless the calling definition has `test` set (src/wscontext/cli/impact.py:59-62).
+- Importers stay per file. A `use` inside a `#[cfg(test)]` module makes its
+  file an importer, not a test.
+- The schema change rebuilds every repository's graph once after the update
+  (src/wscontext/graph/db.py:87-95).
+- A part sets `test` only for in-file rules. A rule about a whole file goes in
+  `is_test` (src/wscontext/graph/languages/README.md:30-31).
+
+**Guardrail.** Python and the ECMAScript languages never set `test`. Their
+tests are found by file name.
+
+### ADR-051 — A change of language parts links every past commit again
+
+**Decision.** `link_sessions` stores the loaded parts as sorted `name:version`
+pairs in `meta` under `link_parts`. When the stored value differs from the
+current one, it deletes all `touched` and `touched_done` rows in one
+transaction and stores the new value. The commits are then linked again within
+the refresh budget (src/wscontext/graph/history.py:172-181).
+
+**Implications.**
+- Switching a language on or off, a part's `version` going up, and a grammar
+  becoming unavailable each cause a re-link.
+- The graph worker finishes what the budget leaves. Answers carry
+  `graph-incomplete` meanwhile (→ ADR-039, ADR-041).
+- A commit that is no longer in the clone loses its links on a re-link, file
+  level included (→ ADR-040).
+- A grammar that fails and then recovers causes two full re-links.
+- A repository that has never stored the value re-links once on the first
+  refresh after the update.
+- A session link for a language switched on later is made at the next refresh.
+  No manual step is needed.
+
+### ADR-052 — Rust imports resolve through `Cargo.toml`, and stop at the package
+
+**Decision.** The Rust part resolves `mod x;`, `crate::`, `self::` and
+`super::` to files in the repository. The package is the nearest folder above
+the file that has a `Cargo.toml`. The crate roots are `src/lib.rs`,
+`src/main.rs`, `src/bin/*.rs`, and `*.rs` directly in `tests/`, `benches/` and
+`examples/`. A crate root or a `mod.rs` keeps its child modules in its own
+folder. Any other `a/b.rs` keeps them in `a/b/`
+(src/wscontext/graph/languages/rust.py:308-382). The grammar is
+`tree-sitter-rust` 0.24 (pyproject.toml:11; extends ADR-042).
+
+**Implications.**
+- A path that starts with any other name stays unresolved: another crate, the
+  standard library, a registry crate, or a bare child-module name
+  (src/wscontext/graph/languages/rust.py:361-362).
+- Inside an inline module, `self::` and `super::` are rewritten relative to the
+  file when the import is read. The resolver needs no scope
+  (src/wscontext/graph/languages/rust.py:127-146).
+- A `crate::` path that matches no module file resolves to the crate root
+  only for a crate root, and for other files under `src/` outside `src/bin/`.
+  For a file under `src/bin/`, `tests/`, `benches/` or `examples/` that is not
+  a crate root, it resolves to nothing. A binary crate's `crate` is the binary,
+  not the library (src/wscontext/graph/languages/rust.py:370-381).
+- An integration test's `use mycrate::...` stays unresolved. The test still
+  shows as a caller by name.
+- `is_test` sees only the path. A file is a test when a `tests` folder is in its
+  path with no `src` folder before it. A test module in its own file, such as
+  `src/foo/tests.rs`, is not a test (src/wscontext/graph/languages/rust.py:384-391).
+- A grammar that cannot load makes Rust unavailable. The other languages still
+  load (→ ADR-038).
+
+**Guardrail.** The missing `src/bin/` fallback to `lib.rs` is deliberate. Do not
+add one.
+
+### ADR-053 — One qualname twice in one file is answered once by `ctx impact`
+
+**Decision.** When every definition a target matches has the same file and
+qualname, `ctx impact` answers for them as one target. Callers and session
+links are keyed by name, so they are the same for each. The head block lists
+the lines of each definition (src/wscontext/cli/impact.py:115-116, 180-184).
+`ctx why` keeps its candidate list. Each candidate's link is `ctx why
+FILE:START-END`, and the note says to rerun with a line range
+(src/wscontext/cli/why.py:169-176).
+
+**Implications.**
+- This applies to any language: Rust `Foo.fmt` from two trait impls, and a
+  Python `@property` with its setter.
+- A `ctx impact` target that matches definitions with different qualnames or in
+  different files still asks the caller to pick one.
+- To see the session behind one of the definitions, use the line range.

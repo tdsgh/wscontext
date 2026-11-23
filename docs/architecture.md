@@ -189,25 +189,45 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
 
 - **Store.** `index/graph.db`, SQLite in WAL mode, with a schema version in
   `meta`. A version mismatch recreates the file. A read-only connection never
-  waits on a writer (src/wscontext/graph/db.py:8, 72-96). It holds files,
+  waits on a writer (src/wscontext/graph/db.py:8, 73-96). It holds files,
   symbols, imports, calls, co-change counts and session links
-  (src/wscontext/graph/db.py:10-41). It is derived and rebuildable
-  (→ ADR-005).
+  (src/wscontext/graph/db.py:10-38). Schema version 3 adds `symbols.test`
+  (src/wscontext/graph/db.py:8, 15-18; → ADR-050). It is derived and
+  rebuildable (→ ADR-005).
 - **Files read.** The paths `git ls-files -co --exclude-standard` lists, minus
   deleted ones and minus `[graph] exclude`, whose extension belongs to a
   switched-on language (src/wscontext/graph/build.py:63-67). A file over 1 MB
   is recorded as skipped (src/wscontext/graph/scope.py:7).
 - **Language parts.** Each language is one part behind the `LanguagePart`
-  contract (src/wscontext/graph/languages/base.py:78). The registry names the
-  parts (src/wscontext/graph/languages/__init__.py:12-16). Core modules know
+  contract (src/wscontext/graph/languages/base.py:81). The registry names the
+  parts: Python, TypeScript, JavaScript and Rust
+  (src/wscontext/graph/languages/__init__.py:12-17). Core modules know
   only the contract (→ ADR-038). The recipe for a new language is
   [src/wscontext/graph/languages/README.md](../src/wscontext/graph/languages/README.md).
 - **Definitions.** Functions, classes and methods; for TypeScript also
   interfaces, type aliases and enums, as kind `type`
-  (src/wscontext/graph/languages/_ecmascript.py:20, 125-131).
+  (src/wscontext/graph/languages/_ecmascript.py:20, 125-131). For Rust:
+  functions, methods, `macro_rules!` macros, and structs, enums, unions,
+  traits and type aliases as kind `type`. A method in an `impl` is
+  `Type.name`. An item in an inline `mod x` is `x.name`, and the module is not
+  a definition. Constants, statics, enum variants, fields and associated types
+  are not definitions. A definition starts at its first attribute or doc
+  comment (src/wscontext/graph/languages/rust.py:11-13, 40-52, 196-231,
+  232-246).
+- **Tests.** A definition carries a `test` mark, set by its language part for
+  tests that sit inside a file. Rust sets it on a function with a
+  `#[test]`-style attribute and on everything inside a `#[cfg(test)]` module
+  (src/wscontext/graph/languages/rust.py:55-65, 214, 246). `is_test(path)`
+  still decides test files, per file, for every language
+  (src/wscontext/graph/languages/rust.py:384-391). `ctx impact` lists a caller
+  as a test when either one says so (src/wscontext/cli/impact.py:61, 142;
+  → ADR-050).
 - **Imports.** Resolved to files in the repository only
   (src/wscontext/graph/languages/python.py:150,
-  src/wscontext/graph/languages/_ecmascript.py:279).
+  src/wscontext/graph/languages/_ecmascript.py:279). Rust resolves `mod`,
+  `crate::`, `self::` and `super::` paths from the nearest `Cargo.toml`. A path
+  that starts with any other name stays unresolved
+  (src/wscontext/graph/languages/rust.py:308-382; → ADR-052).
 - **Calls.** Stored as the callee's short name, with the enclosing definition.
   A caller is found by name at query time
   (src/wscontext/graph/query.py:185-199; → ADR-014).
@@ -216,7 +236,9 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
   files is skipped (src/wscontext/graph/history.py:26, 53-60, 90-95).
 - **Session links.** The changed lines of each linked commit, mapped onto the
   definitions in that commit's files (src/wscontext/graph/history.py:166;
-  → ADR-040).
+  → ADR-040). When the set of loaded language parts or one part's version
+  changes, every commit is linked again
+  (src/wscontext/graph/history.py:172-181; → ADR-051).
 - **Refresh.** Every graph command refreshes within `[graph] query_budget_ms`
   before it answers (src/wscontext/cli/data.py:127-141; → ADR-041). The answer
   carries `graph-busy` or `graph-incomplete` when it may be missing results
@@ -230,12 +252,15 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
   `ctx impact` (callers, tests, importers, co-changed files and sessions),
   `ctx why` on `#name`, `ctx rebuild --graph`, `ctx stats code`
   (src/wscontext/cli/main.py:25-26, src/wscontext/cli/rebuild.py:1,
-  src/wscontext/cli/stats.py:9).
+  src/wscontext/cli/stats.py:9). A name defined twice in one file under one
+  qualname is answered once by `ctx impact` and listed by `ctx why` with
+  line-range links (src/wscontext/cli/impact.py:115-116, 180-184;
+  src/wscontext/cli/why.py:169-176; → ADR-053).
 - **Settings.** `[graph]` in `.wscontext/config.toml`: `languages`, `exclude`,
   `query_budget_ms`, `cochange_commits` (src/wscontext/config.py:61-70,
-  .wscontext/config.toml:31-37).
+  .wscontext/config.toml:32-38).
 - **Dependencies.** One package per grammar, plus `tree-sitter`
-  (pyproject.toml:6-11; → ADR-042). They load only inside functions of
+  (pyproject.toml:6-12; → ADR-042). They load only inside functions of
   `graph/parse.py` and the language modules.
 
 ### Redaction
@@ -321,16 +346,18 @@ are in [roadmap.md](roadmap.md).
   definitions share a name (→ ADR-014).
 - Imports resolve within the repository only. Package imports and `tsconfig`
   path aliases are not resolved
-  (src/wscontext/graph/languages/_ecmascript.py:279).
+  (src/wscontext/graph/languages/_ecmascript.py:279). In Rust, a path that
+  starts with another crate, the standard library or a bare child-module name
+  is not resolved (→ ADR-052).
 - A file rename or move starts a new history for its definitions and its
   co-change pairs. Co-change reads `git log --no-renames`
   (src/wscontext/graph/history.py:55-56).
 - A session that never committed is linked to files only, not to definitions.
   `ctx impact` on a file lists it as "no linked commit"
-  (src/wscontext/cli/impact.py:161-164).
+  (src/wscontext/cli/impact.py:167-172).
 - `ctx why` falls back to a regex match for the first definition of a name in
   a file the graph does not parse, or when the graph fails
-  (src/wscontext/cli/why.py:41-47, 211-215).
+  (src/wscontext/cli/why.py:41-47, 217-223).
 - Removing a session after it was pushed requires rewriting and force-pushing
   the history branch (→ ADR-007).
 - Host squash-merges may drop `AI-Session` trailers; checkpoints then exist only

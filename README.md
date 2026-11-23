@@ -97,10 +97,12 @@ are matched by name, so `ctx impact` says how many definitions share the name.
 Every graph command first brings the graph up to the working tree. An answer
 may carry `graph-busy` or `graph-incomplete`; rerun it in a moment.
 
-The graph reads Python, TypeScript and JavaScript. These `[graph]` settings are in
+The graph reads Python, TypeScript, JavaScript and Rust. These `[graph]` settings are in
 `.wscontext/config.toml`:
 
-- `languages`: the languages switched on.
+- `languages`: the languages switched on. A new `ctx init` writes all four. It
+  keeps an existing config, so a repository set up earlier adds `"rust"` to
+  this list by hand. `ctx doctor` shows the line to add.
 - `exclude`: glob patterns on repository paths left out of the graph.
 - `query_budget_ms`: the longest a command waits for the graph.
 - `cochange_commits`: how many recent commits count toward files that change
