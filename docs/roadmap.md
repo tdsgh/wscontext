@@ -202,7 +202,7 @@ still available, shows it, and imports what the user accepts. Built after the
 Alpha exit and before Beta, where a second developer sets wscontext up on a
 shared repository that is already in progress.
 
-- **Requirements:** `import-phase-1.md`, not written yet.
+- **Requirements:** [import-phase-1.md](import-phase-1.md).
 - **Past sessions:** Claude Code transcripts of this repository that are still
   on disk and not captured yet. Claude Code deletes its transcripts after a
   set number of days (30 by default), so older sessions are gone for good.
@@ -217,9 +217,10 @@ shared repository that is already in progress.
 - **The user decides:** a preview lists what was found (sessions, the commits
   they link, documents) and writes nothing. The user then imports all of it,
   part of it, or nothing. A later run offers only what is new.
-- **Same path as live capture:** imported content passes through the redactor
-  and is stored like a live session. With sync on, it is shared like a live
-  session.
+- **Same path as live capture:** imported sessions and commit links pass
+  through the redactor and are stored like a live session. With sync on, they
+  are shared like a live session. Documents stay in the repository; their
+  text passes through the redactor before it is indexed.
 - **Not counted:** imported sessions do not count toward the Alpha exit.
 - **Gate:** the stage's acceptance scenarios pass in a throwaway repository
   that has transcripts and commits from before setup: the preview writes

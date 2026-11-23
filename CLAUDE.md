@@ -80,7 +80,7 @@ it instead of restating them — `→ ADR-0NN` refers to
 | Install the plugin locally | [README.md](README.md) § Install |
 | Understand why a decision was taken | [docs/design-rationale.md](docs/design-rationale.md) |
 | See the stages and how to run one | [docs/roadmap.md](docs/roadmap.md) |
-| Read the current stage's requirements | none open; finished stages are in [docs/hist/](docs/hist/) |
+| Read the current stage's requirements | [docs/import-phase-1.md](docs/import-phase-1.md); finished stages are in [docs/hist/](docs/hist/) |
 | Build the current stage | `docs/build-plan-wscontext-phase-N.md` (local only) via `/kit:run-build-plan` |
 ## Execution guardrails
 
