@@ -519,7 +519,7 @@ def stats_code(acc: Acc) -> str:
     check(py["files"] == len(listed) and py["symbols"] == outlines, f"stats {py} vs {len(listed)} files and {outlines} definitions in the outlines")
     check(sum(graph["graph"]["by_status"].values()) == len(listed), f"by status {graph['graph']['by_status']} vs {len(listed)} files")
     check(graph["graph"]["last_build"] and graph["graph"]["bytes"] > 0 and graph["changed_files"] == 0, f"build, size or changes: {graph}")
-    check(graph["languages"]["enabled"] == ["python", "typescript", "javascript"] and not graph["languages"]["unavailable"], f"languages: {graph['languages']}")
+    check(graph["languages"]["enabled"] == ["python", "typescript", "javascript", "rust"] and not graph["languages"]["unavailable"], f"languages: {graph['languages']}")
     # the health check: parser, one line per language, the graph; it never refreshes
     names = {c["check"]: c for c in acc.ctx_json(repo, "doctor", code=None)["checks"]}
     for name in ("code parser", "language python", "language typescript", "language javascript", "code graph"):

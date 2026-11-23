@@ -167,6 +167,8 @@ def _candidates(args, symbols, flags: list[str], caveats: str) -> Reply:
     for b in blocks:
         b.links = b.links[1:]
     if len({(x.path, x.qualname) for x in symbols}) == 1:
+        for b, x in zip(blocks, symbols):
+            b.links = [f"ctx why {x.path}:{x.start}-{x.end}"]
         pick = ("Several definitions share this name; rerun `ctx why` with a line range: "
                 + ", ".join(f"`{x.path}:{x.start}-{x.end}`" for x in symbols) + ".")
     else:

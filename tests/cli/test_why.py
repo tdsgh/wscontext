@@ -258,3 +258,23 @@ def test_why_on_one_qualname_defined_twice_names_the_line_ranges(world, capsys):
     assert code == 1 and data["ambiguous"] is True
     assert "rerun `ctx why` with a line range" in data["note"]
     assert "`src/prop.py:2-4`" in data["note"] and "`src/prop.py:6-8`" in data["note"]
+
+
+def test_why_same_qualname_candidates_link_to_their_own_lines(world, capsys):
+    (world.repo / "src" / "prop.py").write_text(
+        "class A:\n    @property\n    def x(self):\n        return 1\n\n"
+        "    @x.setter\n    def x(self, v):\n        pass\n")
+    code, out, _ = world.ctx(capsys, "why", "src/prop.py#A.x")
+    assert code == 1
+    assert "ctx why src/prop.py:2-4" in out and "ctx why src/prop.py:6-8" in out
+    assert "more: `ctx why src/prop.py#A.x`" not in out
+    data = json.loads(world.ctx(capsys, "why", "src/prop.py#A.x", "--json")[1])
+    assert [r["links"] for r in data["results"]] == [
+        ["ctx why src/prop.py:2-4"], ["ctx why src/prop.py:6-8"]]
+
+
+def test_why_different_qualname_candidates_keep_their_links(world, capsys):
+    (world.repo / "src" / "twin.py").write_text("def alpha():\n    return 0\n")
+    data = json.loads(world.ctx(capsys, "why", "#alpha", "--json")[1])
+    assert [r["links"] for r in data["results"]] == [
+        ["ctx why src/app.py#alpha"], ["ctx why src/twin.py#alpha"]]
