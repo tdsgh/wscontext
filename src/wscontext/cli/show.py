@@ -99,8 +99,9 @@ def run(args, store: StorePaths, config: Config) -> Reply:
     sid = record.session_id
     session = Block("session", sid, f"{record.branch or 'unknown branch'} by {record.author}",
                     (record.started_at or "")[:10] or None,
-                    [f"{len(turns)} turns; ended {record.ended_at or 'not recorded'}"],
-                    extra={"author": record.author, "branch": record.branch,
+                    [f"{len(turns)} turns; ended {record.ended_at or 'not recorded'}",
+                     *([f"imported on {record.imported_at[:10]}"] if record.imported_at else [])],
+                    extra={"imported_at": record.imported_at, "author": record.author, "branch": record.branch,
                            "started_at": record.started_at, "ended_at": record.ended_at,
                            "head_start": record.head_start, "head_end": record.head_end,
                            "files_touched": record.files_touched,

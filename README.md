@@ -61,7 +61,8 @@ Otherwise fetches and pushes fail, and `ctx doctor` warns.
 
 ## Search past work
 
-    ctx find <words> [--branch B] [--author A] [--since 7d] [--file F] [--kind session|commit]
+    ctx find <words> [--branch B] [--author A] [--since 7d] [--file F] [--kind session|commit|document]
+    ctx import                 # preview past sessions and documents; --offer TOKEN --all|--take 1,3 imports
     ctx brief                  # the brief a session starting now would get
     ctx rebuild                # delete the search index and rebuild it
     ctx eval [--corpus DIR] [--questions FILE] [--min N]   # score search on the fixed corpus

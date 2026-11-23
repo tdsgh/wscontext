@@ -51,6 +51,9 @@ it instead of restating them — `→ ADR-0NN` refers to
 - Read Claude Code transcripts only through an adapter (→ ADR-002).
 - Push the history ref only from the `pre-push` hook and `ctx sync`
   (→ ADR-008).
+- The Claude Code folder lookup in `src/wscontext/adapters/claude_home.py`
+  reads `CLAUDE_CONFIG_DIR`. Nothing else in application code reads the
+  environment. Root-level exception to `kit-python-config.md`.
 - No POSIX-only calls in application code; shell stays in the plugin launchers
   (`bin/ctx`, `bin/ctx.cmd`) and the Git-hook shims (→ ADR-020, ADR-022).
 

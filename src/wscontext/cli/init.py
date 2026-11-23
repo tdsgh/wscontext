@@ -11,6 +11,7 @@ import os
 import sys
 from pathlib import Path
 
+from wscontext.capture import importer
 from wscontext.cli.output import Reply, error
 from wscontext.config import Config, load_config
 from wscontext.githooks.install import install
@@ -161,4 +162,12 @@ def run(args, store: StorePaths, config: Config) -> Reply:
         except GitError as e:
             lines.append(f"history fetch from {configured.sync.remote} failed: {e}")
     lines.append("Run `ctx doctor` to check the setup.")
+    try:
+        offer = importer.find(store, configured)
+    except Exception:  # a failed read-only search adds nothing and keeps the exit code
+        offer = None
+    if offer and offer.items:
+        s, d = len(offer.sessions), len(offer.documents)
+        lines.append(f"Past work found: {s} session{'s' * (s != 1)}, "
+                     f"{d} document{'s' * (d != 1)}. Run `ctx import` to see it.")
     return Reply("\n".join(lines), code, report=True)

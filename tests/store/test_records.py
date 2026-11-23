@@ -179,3 +179,25 @@ def test_schema_2_session_round_trip(store):
                         transcript_bytes={"source": 1000, "stored": 220, "reply": 120})
     write_session(store, rec, Config())
     assert read_session(store, "s-2") == rec
+
+
+def test_imported_at_round_trips_and_is_optional(store):
+    rec = SessionRecord(session_id="s-3", author="x", imported_at="2026-11-23T10:00:00Z")
+    write_session(store, rec, Config())
+    assert read_session(store, "s-3") == rec
+    assert read_session(store, "s-3").schema_version == SessionRecord.CURRENT_SCHEMA == 2
+
+
+def test_record_without_imported_at_reads_as_none_for_every_schema(store):
+    path = store.records / "sessions"
+    path.mkdir(parents=True)
+    for v in (1, 2):
+        (path / f"v{v}.json").write_text(f'{{"schema_version": {v}, "session_id": "v{v}", "author": "x"}}')
+        assert read_session(store, f"v{v}").imported_at is None
+    # an older reader drops the field: the same record with it removed still loads
+    write_session(store, SessionRecord(session_id="s-4", author="x", imported_at="t"), Config())
+    file = path / "s-4.json"
+    data = json.loads(file.read_text(encoding="utf-8"))
+    del data["imported_at"]
+    file.write_text(json.dumps(data))
+    assert read_session(store, "s-4").imported_at is None

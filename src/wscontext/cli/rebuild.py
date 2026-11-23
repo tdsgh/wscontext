@@ -21,9 +21,15 @@ def run(args, store: StorePaths, config: Config) -> Reply:
         result = build.rebuild(store)
         if result["locked"]:
             return error("another process is updating the index; try again shortly", args.json)
+        docs = build.index_docs(store, config)
+        if docs["locked"]:
+            return error("another process is updating the index; try again shortly", args.json)
+        result["documents_indexed"] = docs["documents_indexed"]
         out.update(result)
         lines.append(f"Index rebuilt: {result['sessions_indexed']} sessions, "
                      f"{result['commits_indexed']} commits indexed.")
+        if docs["documents_indexed"]:
+            lines.append(f"{docs['documents_indexed']} documents indexed.")
         if result["pending_commits"]:
             lines.append(f"{result['pending_commits']} commits are not in this clone yet and "
                          "will be indexed once they are.")

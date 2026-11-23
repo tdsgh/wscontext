@@ -70,7 +70,8 @@ def data_blocks(d: dict) -> list[Block]:
         sharing = f"on, remote {s['remote']}: {behind}; {s['pending_sessions']} sessions pending"
     else:
         sharing = "off (no sync remote set)"
-    body = [f"sessions: {d['sessions']}; turns: {d['turns']}; transcript events: {d['transcript_events']}",
+    imported = f" ({d['imported_sessions']} imported)" if d["imported_sessions"] else ""
+    body = [f"sessions: {d['sessions']}{imported}; turns: {d['turns']}; transcript events: {d['transcript_events']}",
             f"commits: {d['commits']}; linked to a session: {d['linked']} ({share(d['linked_share'])})",
             f"store: {size(d['store_bytes'])}; history branch: {size(d['branch_bytes'])}",
             f"redaction hits: {d['redaction_hits']} across {d['transcript_copies']} transcript copies",
@@ -195,6 +196,7 @@ def hooks_blocks(h: dict) -> list[Block]:
 def session_blocks(d: dict, calls: list[dict], first: str | None, volume: dict) -> list[Block]:
     body = [f"{d['branch'] or 'unknown branch'} by {d['author']}; "
             f"started {d['started_at'] or '-'}; ended {d['ended_at'] or 'not recorded'}",
+            *([f"imported on {d['imported_at'][:10]}: no hook-side figures"] if d["imported_at"] else []),
             f"turns: {len(d['turns'])}; tool calls: {counts(d['tool_calls'])}",
             f"ctx calls: {counts(d['ctx_calls'])}",
             "tokens: " + (counts(d["tokens"]) if d["tokens"] else "not exposed by the transcript"),

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from wscontext.store.paths import StorePaths
 
-SCHEMA_VERSION = 3  # 3: session titles skip Claude Code's wrapper tags
+SCHEMA_VERSION = 4  # 4: documents, imported sessions (3: session titles skip wrapper tags)
 
 # exchanges indexed and the characters their prompts and replies hold; kept in `meta` under
 # EXCHANGE_KEYS by every refresh that changes a session, read by the prompt brief
@@ -19,7 +19,8 @@ CREATE TABLE sources(path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime_ns INTE
                      digest TEXT NOT NULL);
 CREATE TABLE sessions(session_id TEXT PRIMARY KEY, branch TEXT, author TEXT, started_at TEXT,
                       ended_at TEXT, ended_by TEXT, title TEXT NOT NULL DEFAULT '',
-                      files TEXT NOT NULL DEFAULT '', commits TEXT NOT NULL DEFAULT '');
+                      files TEXT NOT NULL DEFAULT '', commits TEXT NOT NULL DEFAULT '',
+                      imported INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE commits(sha TEXT PRIMARY KEY, author TEXT, created_at TEXT, branch TEXT,
                      session_ids TEXT NOT NULL DEFAULT '', files TEXT NOT NULL DEFAULT '');
 CREATE VIRTUAL TABLE docs_fts USING fts5(

@@ -346,3 +346,24 @@ def test_history_commands_move_a_stage_1_branch_first(world, capsys, command):
     assert read_tip(world.store) is None
     assert world.ctx(capsys, command)[0] == 0
     assert read_tip(world.store) is not None and read_tip(world.store, LEGACY_REF) is None
+
+
+def _mark_imported(world):
+    from wscontext.store.records import read_session, write_session
+    rec = read_session(world.store, "sess-one")
+    rec.imported_at = "2026-03-01T08:00:00Z"
+    write_session(world.store, rec, Config())
+
+
+def test_sessions_and_show_mark_an_imported_session(world, capsys):
+    _mark_imported(world)
+    code, out, _ = world.ctx(capsys, "sessions")
+    assert "2 turns; tools: edit 1, read 2; imported on 2026-03-01" in out
+    [row] = run_json(world, capsys, "sessions")["results"]
+    assert row["status"] == "imported" and row["imported_at"] == "2026-03-01T08:00:00Z"
+    code, out, _ = world.ctx(capsys, "show", "sess-one")
+    assert "  imported on 2026-03-01" in out
+    head = run_json(world, capsys, "show", "sess-one")["results"][0]
+    assert head["imported_at"] == "2026-03-01T08:00:00Z"
+    [plain] = run_json(world, capsys, "sessions", "--branch", "main")["results"]
+    assert plain["id"] == "sess-one"

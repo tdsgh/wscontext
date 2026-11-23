@@ -33,8 +33,12 @@ def has_transcript(rec: SessionRecord) -> bool:
                 or (rec.transcript_bytes or {}).get("stored"))
 
 
-def window_sessions(store: StorePaths, since: datetime | None) -> list[SessionRecord]:
-    return [r for r in list_sessions(store) if in_window(r.started_at, since)]
+def window_sessions(store: StorePaths, since: datetime | None,
+                    imported: bool = True) -> list[SessionRecord]:
+    """Sessions started in the window. `imported=False` leaves out `ctx import` sessions, which
+    have no hook-side turn or query figures (D20)."""
+    return [r for r in list_sessions(store)
+            if in_window(r.started_at, since) and (imported or not r.imported_at)]
 
 
 def read_log(store: StorePaths, name: str, since: datetime | None) -> list[dict]:
@@ -383,7 +387,8 @@ def collect(store: StorePaths, config: Config, since: datetime | None) -> dict:
                 pass
     # Hits are counted by the raw copy and recorded on each worker run's hook-log line.
     copies = [r for r in read_log(store, HOOKS_LOG, since) if "redactions" in r]
-    return {"sessions": len(sessions), "turns": sum(len(r.turns) for r in sessions),
+    return {"sessions": len(sessions), "imported_sessions": sum(bool(r.imported_at) for r in sessions),
+            "turns": sum(len(r.turns) for r in sessions),
             "transcript_events": events, **_commits(store, since),
             **_volume(store, config, since, sessions),
             "redaction_hits": sum(int(r["redactions"]) for r in copies),

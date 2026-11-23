@@ -53,9 +53,32 @@ def shared_remote(tmp_path: Path, git_repo: Path) -> tuple[Path, Path, Path]:
     return bare, clones[0], clones[1]
 
 
+@pytest.fixture(scope="session", autouse=True)
+def never_real_claude_files(tmp_path_factory):
+    """Under the per-test fixtures below, with its own MonkeyPatch: a test's
+    `monkeypatch.undo()` falls back to these empty paths, never to the real ones."""
+    from wscontext.adapters import claude_home
+    from wscontext.redact import account
+    guard = tmp_path_factory.mktemp("guard")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(claude_home, "config_dir", lambda: guard / "claude-home")
+        patch.setattr(account, "account_file_path", lambda: guard / ".claude.json")
+        yield guard
+
+
 @pytest.fixture(autouse=True)
 def no_real_account_file(tmp_path_factory, monkeypatch):
     """Never read the developer's own ~/.claude.json; a test that needs one sets its own."""
     from wscontext.redact import account
     nowhere = tmp_path_factory.mktemp("no-account") / ".claude.json"
     monkeypatch.setattr(account, "account_file_path", lambda: nowhere)
+
+
+@pytest.fixture(autouse=True)
+def no_real_claude_home(tmp_path_factory, monkeypatch):
+    """Never read the developer's own ~/.claude; a test that needs transcripts writes them
+    under `claude_home.config_dir() / "projects"`."""
+    from wscontext.adapters import claude_home
+    empty = tmp_path_factory.mktemp("claude-home")
+    monkeypatch.setattr(claude_home, "config_dir", lambda: empty)
+    return empty

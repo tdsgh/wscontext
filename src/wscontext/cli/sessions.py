@@ -10,7 +10,7 @@ from wscontext.store.records import SessionRecord
 
 DEFAULT_LIMIT = 20
 FILES_SHOWN = 5
-STATUS_TEXT = {"running": "running", "finished": "finished",
+STATUS_TEXT = {"imported": "imported", "running": "running", "finished": "finished",
                "finalized-idle": "finalized after going idle"}
 
 
@@ -30,7 +30,8 @@ def _block(rec: SessionRecord, pending: bool | None) -> Block:
     shown = ", ".join(files[:FILES_SHOWN]) + (f" (+{len(files) - FILES_SHOWN})"
                                               if len(files) > FILES_SHOWN else "")
     body = [f"{len(rec.turns)} turns" + (f"; tools: {tools}" if tools else "")
-            + f"; {STATUS_TEXT[status]}"]
+            + f"; {STATUS_TEXT[status]}"
+            + (f" on {rec.imported_at[:10]}" if status == "imported" else "")]
     if files:
         body.append(f"files: {shown}")
     if pending:
@@ -39,7 +40,7 @@ def _block(rec: SessionRecord, pending: bool | None) -> Block:
                  f"{rec.branch or 'unknown branch'} by {rec.author}",
                  (rec.started_at or "")[:10] or None, body, [f"ctx show {rec.session_id}"],
                  {"author": rec.author, "branch": rec.branch, "started_at": rec.started_at,
-                  "ended_at": rec.ended_at, "status": status, "turns": len(rec.turns),
+                  "ended_at": rec.ended_at, "imported_at": rec.imported_at, "status": status, "turns": len(rec.turns),
                   "tool_calls": rec.tool_calls, "ctx_calls": rec.ctx_calls,
                   "files_touched": files, "pending": pending})
 

@@ -62,8 +62,9 @@ def test_default_config_template_is_the_defaults():
     text = ctx_init.default_config_toml()
     parsed = tomllib.loads(text)
     assert set(parsed) == {"redaction", "retention", "sync", "hooks", "capture", "logs",
-                           "retrieval", "store", "graph"}
+                           "retrieval", "store", "graph", "documents"}
     assert "remote" not in parsed["sync"]
+    assert parsed["documents"] == {"paths": []}
     # the committed file and the template agree with the dataclasses, and so with each other
     assert tomllib.loads((REPO_ROOT / ".wscontext" / "config.toml").read_text()) == parsed
 
@@ -547,3 +548,36 @@ def test_doctor_reports_a_language_whose_grammar_is_unavailable(repo, opts, caps
     _, out, _ = ctx(capsys, *opts, "doctor")
     line = _doctor_line(out, "language typescript")
     assert line.startswith("[WARN]") and "grammar is unavailable" in line
+
+
+def test_init_reports_past_work_when_found(repo, opts, tmp_path, capsys):
+    from import_support import add_docs, transcript
+    add_docs(repo)
+    transcript("sess-past", repo, "add a retry to the fetcher")
+    code, out, _ = ctx(capsys, *opts, "init")
+    assert code == 0
+    assert out.splitlines()[-1] == "Past work found: 1 session, 3 documents. Run `ctx import` to see it."
+
+
+def test_init_without_past_work_adds_no_line(repo, opts, capsys):
+    code, out, _ = ctx(capsys, *opts, "init")
+    assert code == 0 and "Past work" not in out
+
+
+def test_init_ignores_a_failing_past_work_search(repo, opts, monkeypatch, capsys):
+    from import_support import transcript
+    transcript("sess-past", repo, "add a retry to the fetcher")
+
+    def boom(*_a, **_k):
+        raise RuntimeError("unreadable")
+    monkeypatch.setattr(ctx_init.importer, "find", boom)
+    code, out, _ = ctx(capsys, *opts, "init")
+    assert code == 0 and "Past work" not in out
+    assert out.splitlines()[-1].startswith("Run `ctx doctor`")
+
+
+def test_ctx_skill_covers_import():
+    text = (REPO_ROOT / "skills" / "ctx" / "SKILL.md").read_text()
+    for part in ("ctx import --offer TOKEN", "--all", "--take", "--decline", "--declined",
+                 "Do not import before the user answers"):
+        assert part in text

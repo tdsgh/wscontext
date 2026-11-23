@@ -58,7 +58,9 @@ def repo_path(store: StorePaths, path: str) -> str:
 
 
 def session_status(record: SessionRecord) -> str:
-    """`running`, `finished` or `finalized-idle`."""
+    """`imported`, `running`, `finished` or `finalized-idle`."""
+    if record.imported_at:
+        return "imported"
     if record.ended_at is None:
         return "running"
     return "finalized-idle" if record.ended_by == "idle" else "finished"

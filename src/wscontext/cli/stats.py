@@ -32,12 +32,12 @@ def run(args, store: StorePaths, config: Config) -> Reply:
     elif args.view == "data":
         blocks = views.data_blocks(data.collect(store, config, since))
     elif args.view == "turns":
-        blocks = views.turns_blocks(turns.summarize(data.window_sessions(store, since), since))
+        blocks = views.turns_blocks(turns.summarize(data.window_sessions(store, since, imported=False), since))
     elif args.view == "hooks":
         blocks = views.hooks_blocks(hooks.summarize(store, since))
     elif args.view == "queries":
         calls = queries.join_calls(store, since)
-        sessions = data.window_sessions(store, since)
+        sessions = data.window_sessions(store, since, imported=False)
         summary = queries.summarize(calls, queries.ctx_first(store, sessions),
                                     queries.adoption(sessions),
                                     queries.prompt_follow_through(sessions))

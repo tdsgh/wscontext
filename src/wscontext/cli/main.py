@@ -27,6 +27,7 @@ COMMANDS = {
     "brief": "wscontext.cli.brief",
     "rebuild": "wscontext.cli.rebuild",
     "eval": "wscontext.cli.eval",
+    "import": "wscontext.cli.import_",
 }
 # Read commands that start the throttled background fetch when a sync remote is set (ADR-008).
 # They also spawn the `sweep` worker when a session is idle or the last sweep is a day old.

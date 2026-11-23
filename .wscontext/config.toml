@@ -36,3 +36,6 @@ exclude = []
 query_budget_ms = 5000
 # how many recent non-merge commits count toward co-change
 cochange_commits = 2000
+
+[documents]
+paths = []

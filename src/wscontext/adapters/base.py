@@ -60,6 +60,17 @@ class ParsedTranscript:
     skipped_lines: int = 0
 
 
+@dataclass
+class ToolUse:
+    """One tool call with its result, whole. For building records, never rendered.
+
+    timestamp is the result line's, else the call line's."""
+    name: str
+    input: dict
+    result: str | None
+    timestamp: str | None
+
+
 class TranscriptAdapter(Protocol):
     def detect(self, lines: Sequence[str]) -> bool: ...
 

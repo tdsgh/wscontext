@@ -41,8 +41,8 @@ _SAID = "{prompt reply} : "  # what was said in a session: not tool output, not 
 
 @dataclass
 class Hit:
-    kind: str  # "session" or "commit"
-    ref: str  # session id or commit sha
+    kind: str  # "session", "commit" or "document"
+    ref: str  # session id, commit sha, or `path:line` of a document section
     session_id: str | None
     turn: int | None  # best exchange of a session; None for a commit or a subagent exchange
     snippet: str
@@ -50,8 +50,9 @@ class Hit:
     date: str | None
     branch: str | None
     author: str | None
-    title: str
+    title: str  # a document's heading
     active: bool  # session not finalized yet
+    imported: bool = False  # session made by `ctx import`
 
 
 def _match(tokens: list[str], op: str) -> str:
@@ -70,17 +71,19 @@ def search(conn: sqlite3.Connection, text: str, *, branch: str | None = None,
     if not tokens or limit < 1:
         return []
     # bm25 weighs a term found in half the rows or more as zero
-    rows = conn.execute("SELECT count(*) FROM docs_fts").fetchone()[0]
+    only = " AND kind=?" if kind else ""
+    extra = [kind] if kind else []
+    rows = conn.execute(f"SELECT count(*) FROM docs_fts WHERE 1{only}", extra).fetchone()[0]
     weighted = [t for t in tokens if 2 * conn.execute(
-        "SELECT count(*) FROM docs_fts WHERE docs_fts MATCH ?", (_match([t], "OR"),)).fetchone()[0]
-        < rows] or tokens
+        f"SELECT count(*) FROM docs_fts WHERE docs_fts MATCH ?{only}",
+        [_match([t], "OR"), *extra]).fetchone()[0] < rows] or tokens
     hits = _run(conn, _match(weighted, "AND"), branch, author, since, file, kind, limit)
     if len(hits) < limit and len(tokens) > 1:
         seen = {(h.kind, h.ref) for h in hits}
         more = _run(conn, _match(tokens, "OR"), branch, author, since, file, kind, limit)
         # AND matches rank first; OR adds the rest
         hits += [h for h in more if (h.kind, h.ref) not in seen][: limit - len(hits)]
-    if kind == "session":
+    if kind in ("session", "document"):
         return hits
     # a commit matching a weighted term ranks no lower than right after its best-ranked session
     sessions = [h.ref for h in hits if h.kind == "session"]
@@ -108,6 +111,8 @@ def _run(conn, match, branch, author, since, file, kind, limit, refs=None) -> li
     if kind:
         where.append("d.kind = ?")
         params.append(kind)
+    if branch or author or since:  # a section has no branch, author or date
+        where.append("d.kind != 'document'")
     if branch:
         where.append("COALESCE(s.branch, c.branch) = ?")
         params.append(branch)
@@ -118,14 +123,16 @@ def _run(conn, match, branch, author, since, file, kind, limit, refs=None) -> li
         where.append("COALESCE(s.ended_at, s.started_at, c.created_at) >= ?")
         params.append(since)
     if file:
-        where.append("instr(COALESCE(s.files, c.files), ?) > 0")
-        params.append(file)
+        where.append("(instr(COALESCE(s.files, c.files), ?) > 0 "
+                     "OR (d.kind = 'document' AND instr(d.ref, ?) > 0))")
+        params.extend([file, file])
     sql = f"""
         SELECT d.kind, d.ref, d.session_id, d.turn, snippet(docs_fts, -1, '', '', '...', 24),
                bm25(docs_fts, {_WEIGHTS}) AS score,
                COALESCE(s.started_at, c.created_at), COALESCE(s.branch, c.branch),
-               COALESCE(s.author, c.author), COALESCE(s.title, ''),
-               s.session_id IS NOT NULL AND s.ended_at IS NULL
+               COALESCE(s.author, c.author),
+               CASE WHEN d.kind = 'document' THEN d.prompt ELSE COALESCE(s.title, '') END,
+               s.session_id IS NOT NULL AND s.ended_at IS NULL, COALESCE(s.imported, 0)
         FROM docs_fts d
         LEFT JOIN sessions s ON d.kind = 'session' AND s.session_id = d.ref
         LEFT JOIN commits c ON d.kind = 'commit' AND c.sha = d.ref
@@ -141,7 +148,7 @@ def _run(conn, match, branch, author, since, file, kind, limit, refs=None) -> li
         seen.add(key)
         turn = row[3] if row[0] == "session" else None
         out.append(Hit(row[0], row[1], row[2] or None, turn, row[4], row[5], row[6], row[7],
-                       row[8], row[9], bool(row[10])))
+                       row[8], row[9], bool(row[10]), bool(row[11])))
         if len(out) == limit:
             break
     return out
@@ -231,12 +238,12 @@ def _prompt_hits(conn, words, exclude, limit, budget) -> list[Hit]:
     rows: dict[str, set[int]] = {}  # distinctive word -> the exchanges that said it
     for w in words:
         match = _SAID + _match([w], "OR")
-        df = conn.execute("SELECT count(*) FROM docs_fts WHERE docs_fts MATCH ?",
+        df = conn.execute("SELECT count(*) FROM docs_fts WHERE docs_fts MATCH ? AND kind='session'",
                           (match,)).fetchone()[0]
         if not 0 < df <= _COMMON_SHARE * n:
             continue
-        said = {r for r, in conn.execute("SELECT rowid FROM docs_fts WHERE docs_fts MATCH ?",
-                                          (match,))}
+        said = {r for r, in conn.execute(
+            "SELECT rowid FROM docs_fts WHERE docs_fts MATCH ? AND kind='session'", (match,))}
         # the index stems words: "warn" and "warning" are one term, counted once
         if not any(said == seen and (w.startswith(o) or o.startswith(w))
                    for o, seen in rows.items()):

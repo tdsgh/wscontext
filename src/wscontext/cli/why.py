@@ -97,6 +97,7 @@ def _sessions(store: StorePaths, info: trace.CommitInfo, full: bool) -> list[dic
         shown = before if full else before[-PROMPTS_COMPACT:]
         found.append({"id": sid, "available": True, "date": (record.started_at or "")[:10] or None,
                       "branch": record.branch, "author": record.author,
+                      "imported_at": record.imported_at,
                       "prompts": [{"turn": t.index, "text": t.prompt} for t in shown],
                       "prompts_omitted": len(before) - len(shown),
                       "prompts_available": any(t.prompt is not None for t in turns)})
@@ -114,7 +115,8 @@ def _commit_block(store: StorePaths, info: trace.CommitInfo, lines: list[int],
             continue
         links.append(f"ctx show {s['id']}")
         meta = ", ".join(x for x in (s["date"], s["branch"]) if x)
-        body.append(f"session {s['id']}" + (f" ({meta})" if meta else ""))
+        body.append(f"session {s['id']}" + (f" ({meta})" if meta else "")
+                    + (" imported" if s["imported_at"] else ""))
         if not s["prompts_available"]:
             body.append("  prompts unavailable: transcript not captured or format not recognised")
         elif s["prompts_omitted"]:

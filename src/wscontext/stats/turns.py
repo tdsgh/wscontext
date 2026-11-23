@@ -44,7 +44,7 @@ def summarize(sessions: list[SessionRecord], since: datetime | None) -> dict:
 def session_detail(rec: SessionRecord) -> dict:
     return {"session_id": rec.session_id, "branch": rec.branch, "author": rec.author,
             "started_at": rec.started_at, "ended_at": rec.ended_at,
-            "ended_by": rec.ended_by, "retrieval": rec.retrieval, "brief_tokens": rec.brief_tokens,
+            "imported_at": rec.imported_at, "ended_by": rec.ended_by, "retrieval": rec.retrieval, "brief_tokens": rec.brief_tokens,
             "prompt_brief_tokens": rec.prompt_brief_tokens,
             "prompt_brief_sessions": rec.prompt_brief_sessions,
             "tool_calls": rec.tool_calls, "ctx_calls": rec.ctx_calls, "tokens": rec.tokens,

@@ -299,3 +299,22 @@ def test_session_view_reports_the_prompt_brief(world, capsys):
     assert "prompt brief: 150 tokens, named sess-one, sess-two" in out
     assert "prompt brief: none given" in world.ctx(capsys, "stats", "session", "s-none")[1]
     assert "prompt brief: not recorded" in world.ctx(capsys, "stats", "session", "sess-one")[1]
+
+
+def test_imported_sessions_are_counted_apart(world, capsys):
+    rec = SessionRecord(session_id="sess-imp", author="t", branch="main",
+                        started_at=stamp(minutes_ago=60), ended_at=stamp(minutes_ago=50),
+                        imported_at=stamp(), tool_calls={"read": 1}, ctx_calls={"find": 1},
+                        turns=[TurnRecord(session_id="sess-imp", author="t", index=0,
+                                          started_at=stamp(minutes_ago=60))])
+    write_session(world.store, rec, Config())
+    code, out, _ = world.ctx(capsys, "stats", "data")
+    assert "  sessions: 2 (1 imported); turns: 3;" in out
+    data = stats(world, capsys, "data")[0]
+    assert data["sessions"] == 2 and data["imported_sessions"] == 1
+    turns = stats(world, capsys, "turns")[0]
+    assert turns["sessions"] == 1 and "sess-imp" not in json.dumps(turns)
+    adoption = stats(world, capsys, "queries")[0]["adoption"]
+    assert adoption["sessions"] == 1 and adoption["with_ctx"] == 0
+    code, out, _ = world.ctx(capsys, "stats", "session", "sess-imp")
+    assert "imported on " in out

@@ -99,7 +99,7 @@ existing ones) and the CLAUDE.md block. The store is split (→ ADR-004):
   on a remote's history as of the last fetch or push (a shared tip). The
   pruned files' paths on the ref go into `state/pruned.json`. The step that
   copies fetched history into `raw/` and `records/` (materialize) never writes
-  these files back (src/wscontext/capture/worker.py:247-294). `ctx show`,
+  these files back (src/wscontext/capture/worker.py:264-311). `ctx show`,
   `ctx why` and the index read a pruned copy from the ref. The index rows of a
   pruned session stay.
 
@@ -173,7 +173,7 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
 - **Idle sessions.** The `sweep` worker finalizes active sessions that have
   been idle longer than `capture.stale_session_minutes`. Then it prunes
   `raw/`. A sweep that starts while another one runs does nothing
-  (src/wscontext/capture/worker.py:296-310; → ADR-034).
+  (src/wscontext/capture/worker.py:313-327; → ADR-034).
 - **Eval.** `ctx eval` scores search on a fixed corpus in `eval/stage2/`: the
   sessions, the questions, and a Git bundle of the repository the scripted
   sessions worked in. `acceptance/record_corpus.py` recorded the corpus once.
@@ -395,7 +395,7 @@ are in [roadmap.md](roadmap.md).
   timer (→ ADR-034).
 - If a prompt or tool call arrives while its session's final step runs, its
   counts can be lost. The final step deletes the turn state when it ends
-  (src/wscontext/capture/worker.py:175).
+  (src/wscontext/capture/worker.py:196).
 - Account-ID masking finds the account file at `~/.claude.json` only, and
   matches hyphenated UUIDs only (src/wscontext/redact/account.py:20-21,
   src/wscontext/redact/rules.py:18-20; → ADR-046).

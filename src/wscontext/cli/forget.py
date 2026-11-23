@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 
+from wscontext.capture.importer import decline_session
 from wscontext.capture.state import active_path, read_json, turn_state_path, update_json
 from wscontext.cli.output import Reply, error
 from wscontext.config import Config
@@ -13,7 +14,8 @@ from wscontext.history.branch import (commit_paths, ls_blobs, read_tip, remove_p
 from wscontext.history.sync import shared_paths, shared_tips
 from wscontext.store.locks import FileLock, LockTimeout
 from wscontext.store.paths import StorePaths, is_safe_name
-from wscontext.store.records import RecordError, read_checkpoint, write_checkpoint
+from wscontext.store.records import (RecordError, read_checkpoint, read_session,
+                                     write_checkpoint)
 
 TRAILER_NOTE = ("Commits made in this session keep their AI-Session trailer: Git history is not "
                 "rewritten. The trailer is only an ID and no longer resolves to anything.")
@@ -80,6 +82,10 @@ def run(args, store: StorePaths, config: Config) -> Reply:
               "notes": [TRAILER_NOTE]}
     if not args.dry_run:
         try:
+            imported = read_session(store, sid).imported_at is not None
+        except (OSError, RecordError):
+            imported = False
+        try:
             with FileLock(store.state / "locks" / f"worker-{sid}.lock", stale_after=300,
                           timeout=5), \
                     FileLock(store.state / "locks" / "githooks.lock", stale_after=300, timeout=5):
@@ -87,6 +93,8 @@ def run(args, store: StorePaths, config: Config) -> Reply:
         except LockTimeout:
             return error(f"session {sid} is being written by a worker; try again shortly",
                          args.json)
+        if imported:  # its transcript is still on disk: never offer it again (D15)
+            decline_session(store, config, sid)
     if args.json:
         return Reply(json.dumps(result, indent=2))
     verb = "Would remove" if args.dry_run else "Forgot session " + sid + ". Removed"

@@ -16,7 +16,10 @@ from wscontext.adapters.base import Turn
 from wscontext.adapters.claude_code import ClaudeCodeAdapter, prompt_without_wrappers
 from wscontext.gitutil import GitError, git
 from wscontext.history import branch as history
+from wscontext.config import Config
 from wscontext.index.db import EXCHANGE_KEYS, EXCHANGE_STATS, connect, db_path
+from wscontext.index.docs import sections
+from wscontext.redact.redactor import redact_text
 from wscontext.store.locks import FileLock, LockTimeout
 from wscontext.store.paths import StorePaths, is_safe_name
 from wscontext.store.records import (RecordError, read_checkpoint, read_session)
@@ -25,6 +28,7 @@ log = logging.getLogger(__name__)
 
 TITLE_CHARS = 80
 LOCK_STALE_SECONDS = 600
+DOCUMENT_MAX_BYTES = 1_048_576
 
 
 def _lock(store: StorePaths, timeout: float) -> FileLock:
@@ -196,13 +200,14 @@ def _index_one(store: StorePaths, conn: sqlite3.Connection, sources: _Sources, s
                 [(session_id, session_id, *d) for d in docs])
         conn.execute(
             "INSERT INTO sessions(session_id, branch, author, started_at, ended_at, ended_by, "
-            "title, files) VALUES(?,?,?,?,?,?,COALESCE(?, ''),?) "
+            "title, files, imported) VALUES(?,?,?,?,?,?,COALESCE(?, ''),?,?) "
             "ON CONFLICT(session_id) DO UPDATE SET branch=excluded.branch, "
             "author=excluded.author, started_at=excluded.started_at, ended_at=excluded.ended_at, "
-            "ended_by=excluded.ended_by, files=excluded.files, "
+            "ended_by=excluded.ended_by, files=excluded.files, imported=excluded.imported, "
             "title=COALESCE(?, sessions.title)",
             (session_id, record.branch, record.author, record.started_at, record.ended_at,
-             getattr(record, "ended_by", None), title, "\n".join(record.files_touched), title))
+             getattr(record, "ended_by", None), title, "\n".join(record.files_touched),
+             int(record.imported_at is not None), title))
         _put_sources(conn, new_rows)
         conn.execute("COMMIT")
     except BaseException:
@@ -399,3 +404,91 @@ def rebuild(store: StorePaths, lock_timeout: float = 60) -> dict:
     except LockTimeout:
         return {"locked": True, "lag": -1}
     return refresh(store, lock_timeout)
+
+
+def _document_rows(conn: sqlite3.Connection) -> dict[str, list[int]]:
+    rows: dict[str, list[int]] = {}
+    for rowid, ref in conn.execute("SELECT rowid, ref FROM docs_fts WHERE kind='document'"):
+        rows.setdefault(ref.rpartition(":")[0], []).append(rowid)
+    return rows
+
+
+def _drop_document(conn: sqlite3.Connection, rowids: list[int], key: str) -> None:
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.executemany("DELETE FROM docs_fts WHERE rowid=?", [(r,) for r in rowids])
+        conn.execute("DELETE FROM sources WHERE path=?", (key,))
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+
+
+def _index_docs(store: StorePaths, config: Config, result: dict) -> None:
+    conn = connect(store)
+    try:
+        sources = _Sources(conn)
+        have = _document_rows(conn)
+        wanted = list(dict.fromkeys(config.documents.paths))
+        for path in wanted:
+            key = f"worktree:{path}"
+            file = (store.root / path).resolve()
+            try:
+                inside = file.is_relative_to(store.root.resolve())
+                st = file.stat() if inside and file.is_file() else None
+            except OSError:
+                st = None
+            if st is None or st.st_size > DOCUMENT_MAX_BYTES:
+                result["skipped"].append(path)
+                if path in have or key in sources.rows:
+                    _drop_document(conn, have.pop(path, []), key)
+                    result["documents_removed"] += 1
+                continue
+            old = sources.rows.get(key)
+            if old and old[0] == st.st_size and old[1] == st.st_mtime_ns and path in have:
+                continue
+            data = file.read_bytes()
+            row = (len(data), st.st_mtime_ns, _sha256(data))
+            if old and old[2] == row[2] and path in have:
+                _put_sources(conn, {key: row})  # same content, new mtime
+                continue
+            text = data.decode("utf-8", errors="replace")
+            docs = []
+            for sec in sections(text, path):
+                heading = redact_text(sec.heading, config)[0]
+                body = redact_text(sec.text, config)[0]
+                docs.append((f"{path}:{sec.line}", heading, body))
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                conn.executemany("DELETE FROM docs_fts WHERE rowid=?",
+                                 [(r,) for r in have.pop(path, [])])
+                conn.executemany(
+                    "INSERT INTO docs_fts(kind, ref, session_id, turn, prompt, reply, tools, "
+                    "message) VALUES('document', ?, '', NULL, ?, ?, '', '')", docs)
+                _put_sources(conn, {key: row})
+                conn.execute("COMMIT")
+            except BaseException:
+                conn.execute("ROLLBACK")
+                raise
+            result["documents_indexed"] += 1
+        for path in [p for p in have if p not in wanted]:
+            _drop_document(conn, have[path], f"worktree:{path}")
+            result["documents_removed"] += 1
+        for key in [k for k in sources.rows if k.startswith("worktree:")
+                    and k[len("worktree:"):] not in wanted and k[len("worktree:"):] not in have]:
+            conn.execute("DELETE FROM sources WHERE path=?", (key,))
+    finally:
+        conn.close()
+
+
+def index_docs(store: StorePaths, config: Config, lock_timeout: float = 60) -> dict:
+    """Bring the document rows in line with `config.documents.paths`: index files that changed,
+    drop the rows of a file that is gone, too large or no longer listed, skip unchanged ones.
+    Returns `documents_indexed`, `documents_removed`, `skipped` (paths) and `locked`."""
+    result = {"documents_indexed": 0, "documents_removed": 0, "skipped": [], "locked": False}
+    try:
+        with _lock(store, lock_timeout):
+            _index_docs(store, config, result)
+    except LockTimeout:
+        result["locked"] = True
+    return result

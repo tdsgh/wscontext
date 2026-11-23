@@ -25,7 +25,8 @@ def add_arguments(parser) -> None:
     parser.add_argument("--author", help="only work by this author")
     parser.add_argument("--since", help="only work since a date or a duration like 7d")
     parser.add_argument("--file", help="only work that touched this file")
-    parser.add_argument("--kind", choices=["session", "commit"], help="only sessions or only commits")
+    parser.add_argument("--kind", choices=["session", "commit", "document"],
+                        help="only sessions, only commits or only documents")
 
 
 def _fetch_pending(store: StorePaths, config: Config) -> bool:
@@ -40,9 +41,15 @@ def _fetch_pending(store: StorePaths, config: Config) -> bool:
 
 
 def _block(hit) -> Block:
+    if hit.kind == "document":
+        path, _, line = hit.ref.rpartition(":")
+        return Block("document", hit.ref, hit.title, None, quote(hit.snippet).split("\n"), [hit.ref],
+                     {"path": path, "line": int(line), "snippet": hit.snippet, "score": hit.score})
     commit = hit.kind == "commit"
     who = f"{hit.branch or 'unknown branch'} by {hit.author or 'unknown'}"
     body = [who, *quote(hit.snippet).split("\n")]
+    if hit.imported:
+        body.append("imported session")
     if hit.active:
         body.append("session still running: not final")
     links = [f"git show {hit.ref[:12]}"] if commit else [f"ctx show {hit.ref}"]
@@ -52,7 +59,7 @@ def _block(hit) -> Block:
                  body, list(dict.fromkeys(links)),
                  {"session_id": hit.session_id, "turn": hit.turn, "branch": hit.branch,
                   "author": hit.author, "snippet": hit.snippet, "score": hit.score,
-                  "active": hit.active, "sha": hit.ref if commit else None})
+                  "active": hit.active, "imported": hit.imported, "sha": hit.ref if commit else None})
 
 
 def run(args, store: StorePaths, config: Config) -> Reply:
@@ -68,6 +75,8 @@ def run(args, store: StorePaths, config: Config) -> Reply:
         except ValueError as e:
             return error(str(e), args.json)
     gap = build.refresh(store)
+    docs = build.index_docs(store, config)
+    gap["locked"] = gap["locked"] or docs["locked"]
     try:
         conn = connect(store, readonly=True)
     except (IndexUnavailable, sqlite3.Error):

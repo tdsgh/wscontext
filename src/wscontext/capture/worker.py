@@ -12,6 +12,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
+from wscontext.adapters.base import SubagentRef, Turn
 from wscontext.adapters.claude_code import ClaudeCodeAdapter, measure, owner_ids, reduce
 from wscontext.capture.kinds import tool_kind
 from wscontext.capture.state import (active_path, git_author, git_value, idle_sessions,
@@ -94,6 +95,32 @@ def stored_sizes(raw: Path, subagents: Path) -> dict[str, int]:
     return {**sizes, "stored": sum(sizes.values())}
 
 
+def turn_records(session_id: str, author: str, turns: list[Turn]) -> list[TurnRecord]:
+    """A parsed transcript's turns as records, their tool calls counted by kind."""
+    records = []
+    for t in turns:
+        kinds: dict[str, int] = {}
+        for name, n in t.tool_calls.items():
+            kind = tool_kind(name)
+            kinds[kind] = kinds.get(kind, 0) + n
+        records.append(TurnRecord(session_id=session_id, author=author, index=t.index,
+                                  started_at=t.started_at or "", ended_at=t.ended_at,
+                                  tool_calls=kinds, tokens=t.tokens))
+    return records
+
+
+def copy_subagents(store: StorePaths, config: Config, session_id: str,
+                   refs: list[SubagentRef]) -> list[tuple[Path, Path]]:
+    """Store each subagent transcript that was found; returns (source, copy) pairs."""
+    pairs = []
+    for ref in refs:
+        if is_safe_name(ref.agent_id) and ref.path is not None:
+            target = store.raw / "subagents" / session_id / f"{ref.agent_id}.jsonl"
+            copy_reduced(ref.path, target, config, store)
+            pairs.append((ref.path, target))
+    return pairs
+
+
 def _session_lock(store: StorePaths, session_id: str) -> FileLock:
     # Stop, SessionEnd and sweep workers can overlap; serialize them per session.
     return FileLock(store.state / "locks" / f"worker-{session_id}.lock",
@@ -123,21 +150,11 @@ def _final(store: StorePaths, config: Config, session_id: str, source: Path | No
     source_bytes = source.stat().st_size if source else None
     turns: list[TurnRecord] = []
     if parsed and parsed.supported:
-        for t in parsed.turns:
-            kinds: dict[str, int] = {}
-            for name, n in t.tool_calls.items():
-                kind = tool_kind(name)
-                kinds[kind] = kinds.get(kind, 0) + n
-            turns.append(TurnRecord(session_id=session_id, author=record.author, index=t.index,
-                                    started_at=t.started_at or "", ended_at=t.ended_at,
-                                    tool_calls=kinds, tokens=t.tokens))
-        for ref in parsed.subagents:
-            if is_safe_name(ref.agent_id) and ref.path is not None:
-                target = store.raw / "subagents" / session_id / f"{ref.agent_id}.jsonl"
-                copy_reduced(ref.path, target, config, store)
-                copied.append(target)
-                if source_bytes is not None:
-                    source_bytes += ref.path.stat().st_size
+        turns = turn_records(session_id, record.author, parsed.turns)
+        for path, target in copy_subagents(store, config, session_id, parsed.subagents):
+            copied.append(target)
+            if source_bytes is not None:
+                source_bytes += path.stat().st_size
         config = with_account_ids(config, store)
         record.subagents = [r.agent_id for r in parsed.subagents if is_safe_name(r.agent_id)]
     else:

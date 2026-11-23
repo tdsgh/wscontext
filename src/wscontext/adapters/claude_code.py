@@ -6,7 +6,7 @@ import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from wscontext.adapters.base import Event, Item, ParsedTranscript, SubagentRef, Turn
+from wscontext.adapters.base import Event, Item, ParsedTranscript, SubagentRef, ToolUse, Turn
 
 KNOWN_MAJOR_VERSIONS = frozenset({1, 2})
 PROMPT_PREVIEW = 200
@@ -335,6 +335,43 @@ class ClaudeCodeAdapter:
         out.turns = self._turns(objs, sidechain)
         out.subagents = self._subagents(path, objs, sidechain)
         return out
+
+    def tool_uses(self, path: Path, sidechain: bool = False) -> list[ToolUse]:
+        """Every tool call in transcript order, paired with its result by ID. Input and
+        result are whole, not cut. Sidechain lines are skipped in a main transcript; an
+        unsupported version gives []."""
+        objs = []
+        for line in path.read_bytes().decode("utf-8", errors="replace").splitlines():
+            obj = _loads(line) if line.strip() else None
+            if obj is not None:
+                objs.append(obj)
+        version = next((o["version"] for o in objs if isinstance(o.get("version"), str)), None)
+        if _major(version) not in KNOWN_MAJOR_VERSIONS:
+            return []
+        uses: list[ToolUse] = []
+        by_id: dict[str, ToolUse] = {}
+        for obj in objs:
+            message = obj.get("message")
+            if (obj.get("isSidechain") and not sidechain) or not isinstance(message, dict):
+                continue
+            content = message.get("content")
+            for block in content if isinstance(content, list) else ():
+                if not isinstance(block, dict):
+                    continue
+                if obj.get("type") == "assistant" and block.get("type") == "tool_use":
+                    given = block.get("input")
+                    use = ToolUse(str(block.get("name", "unknown")),
+                                  given if isinstance(given, dict) else {}, None,
+                                  obj.get("timestamp"))
+                    uses.append(use)
+                    if isinstance(block.get("id"), str):
+                        by_id[block["id"]] = use
+                elif obj.get("type") == "user" and block.get("type") == "tool_result":
+                    use = by_id.get(block.get("tool_use_id"))
+                    if use is not None:
+                        use.result = _result_text(block.get("content"))
+                        use.timestamp = obj.get("timestamp") or use.timestamp
+        return uses
 
     def _turns(self, objs: Iterable[dict], sidechain: bool = False) -> list[Turn]:
         turns: list[Turn] = []

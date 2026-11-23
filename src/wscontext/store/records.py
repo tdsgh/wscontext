@@ -57,6 +57,8 @@ class SessionRecord:
     prompt_brief_sessions: list[str] | None = None
     # "source", "stored", and stored bytes per entry kind
     transcript_bytes: dict[str, int] | None = None
+    # set by `ctx import`; not a schema bump: older readers drop it
+    imported_at: str | None = None
     schema_version: int = CURRENT_SCHEMA
 
 

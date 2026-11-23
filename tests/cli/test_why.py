@@ -278,3 +278,16 @@ def test_why_different_qualname_candidates_keep_their_links(world, capsys):
     data = json.loads(world.ctx(capsys, "why", "#alpha", "--json")[1])
     assert [r["links"] for r in data["results"]] == [
         ["ctx why src/app.py#alpha"], ["ctx why src/twin.py#alpha"]]
+
+
+def test_why_marks_an_imported_session(world, capsys):
+    from wscontext.config import Config
+    from wscontext.store.records import read_session, write_session
+    rec = read_session(world.store, "sess-one")
+    rec.imported_at = "2026-03-01T08:00:00Z"
+    write_session(world.store, rec, Config())
+    code, out, _ = world.ctx(capsys, "why", "src/app.py:1-5")
+    assert "  session sess-one (2026-01-01, main) imported" in out
+    data = run_json(world, capsys, "why", "src/app.py:1-5")
+    commit = next(r for r in data["results"] if r["type"] == "commit" and r["sessions"])
+    assert commit["sessions"][0]["imported_at"] == "2026-03-01T08:00:00Z"
