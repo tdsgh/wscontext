@@ -103,7 +103,7 @@ start, the `ctx` skill and CLAUDE.md triggers for search.
 tree-sitter symbols, co-change from `git log`, session links, then
 name-matched `calls`; `ctx code`, `ctx impact`; `ctx why #symbol` on the graph.
 
-- **Requirements:** [wscontext-phase-3.md](wscontext-phase-3.md).
+- **Requirements:** [wscontext-phase-3.md](hist/wscontext-phase-3.md).
 - **Monitoring added:** files, symbols and edges by language; build time; stale
   files.
 - **New agent:** `py-graph`.
@@ -184,7 +184,7 @@ between two checkouts of one repository.
   Every code commit in the synced repository is linked to a session.
 - **Rust in the code graph:** a Rust language part, built after the sync test
   and the benchmark. Requirements:
-  [graph-rust-phase-1.md](graph-rust-phase-1.md).
+  [graph-rust-phase-1.md](hist/graph-rust-phase-1.md).
 - **Gate result (2026-11-23, plugin 0.4.1):** passed. The offline suite had 800
   tests and no warnings. `acceptance/graph_rust.py` passed 8 of 8 scenarios and
   uses no `claude -p`. `stage1.py` passed 13 of 13 (some went manual) and
