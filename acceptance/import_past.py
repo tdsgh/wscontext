@@ -1,4 +1,4 @@
-"""Import-stage acceptance run: the capabilities of docs/import-phase-1.md §4 to §10 against the installed plugin.
+"""Import-stage acceptance run: the capabilities of docs/hist/import-phase-1.md §4 to §10 against the installed plugin.
 
     .venv/bin/python acceptance/import_past.py [--only NAME ...] [--no-claude] [--list] [--keep]
 

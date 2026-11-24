@@ -202,7 +202,7 @@ still available, shows it, and imports what the user accepts. Built after the
 Alpha exit and before Beta, where a second developer sets wscontext up on a
 shared repository that is already in progress.
 
-- **Requirements:** [import-phase-1.md](import-phase-1.md).
+- **Requirements:** [import-phase-1.md](hist/import-phase-1.md).
 - **Past sessions:** Claude Code transcripts of this repository that are still
   on disk and not captured yet. Claude Code deletes its transcripts after a
   set number of days (30 by default), so older sessions are gone for good.

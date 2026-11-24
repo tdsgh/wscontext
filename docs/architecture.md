@@ -366,7 +366,7 @@ are in [roadmap.md](roadmap.md).
 | 1 — Capture and trace | Plugin, capture, redaction, commit linking, history sync, `ctx why/sessions/show/forget`, `ctx stats` | [wscontext-phase-1.md](hist/wscontext-phase-1.md) | built |
 | 2 — History search | FTS5 index, `ctx find`, session brief, skill and CLAUDE.md block, adoption stats, idle-session finalization, stored-volume reduction, retention pruning, moving shared history out of the branches | [wscontext-phase-2.md](hist/wscontext-phase-2.md) | built |
 | 3 — Code graph | Graph with switchable language parts, `ctx code`, `ctx impact`, `ctx why` on a name, refresh at query time and from Git hooks, code stats, tool names out of search, the on/off benchmark | [wscontext-phase-3.md](hist/wscontext-phase-3.md) | built |
-| Import — past work | Preview and import of past sessions, the commits they made, and decision and design documents, in a repository already in progress | [import-phase-1.md](import-phase-1.md) | built |
+| Import — past work | Preview and import of past sessions, the commits they made, and decision and design documents, in a repository already in progress | [import-phase-1.md](hist/import-phase-1.md) | built |
 | 4 — Distillation and semantic search | Decision records with supersession, local embeddings, hybrid ranking | not written | not built |
 | 5 — Finalize | Release, Windows verification, purge and uninstall polish | not written | not built |
 
