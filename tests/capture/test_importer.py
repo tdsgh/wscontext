@@ -629,24 +629,29 @@ def test_an_old_imported_session_is_pruned_like_a_live_one(store, git_repo):
     assert out["pruned"] == [f"raw/sessions/{raw.name}"] and not raw.exists()
 
 
-def test_a_forgotten_imported_session_is_declined(store, git_repo, monkeypatch, capsys):
+def test_a_forgotten_imported_session_is_offered_again_with_a_hint(store, git_repo, monkeypatch,
+                                                                    capsys):
     from wscontext.cli.main import main
     session("sess-gone", git_repo).write()
     take_all(store)
     monkeypatch.chdir(git_repo)
+    capsys.readouterr()
     assert main(["forget", "sess-gone"]) == 0
-    assert "sess-gone" in json.loads((store.state / "import.json").read_text())["declined_sessions"]
-    assert find(store, Config()).items == []
-    assert [i.key for i in find(store, Config(), include_declined=True).items] == ["session:sess-gone"]
+    assert "`ctx import` offers it again" in capsys.readouterr().out
+    assert not json.loads((store.state / "import.json").read_text()).get("declined_sessions")
+    assert ids(find(store, Config())) == ["sess-gone"]
 
 
-def test_forgetting_a_live_session_declines_nothing(store, git_repo, monkeypatch):
+def test_forgetting_a_live_session_declines_nothing(store, git_repo, monkeypatch, capsys):
     from wscontext.cli.main import main
     path = write_session(store, SessionRecord(session_id="sess-live", author="t"), Config())
     commit_paths(store, [path], "live")
     monkeypatch.chdir(git_repo)
+    capsys.readouterr()
     assert main(["forget", "sess-live"]) == 0
     assert not (store.state / "import.json").exists()
+    # no transcript in Claude Code's folder: no hint
+    assert "ctx import" not in capsys.readouterr().out
 
 
 def test_the_history_ref_is_the_only_ref_the_import_moves(store, git_repo):

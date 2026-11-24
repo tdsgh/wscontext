@@ -1,11 +1,11 @@
 # wscontext
 
 A local harness for Claude Code that captures agent sessions, links them to Git
-commits, and answers why a line of code exists. Stages 1 to 3 of
-[docs/roadmap.md](docs/roadmap.md) are built: capture, commit linking, history
+commits, and answers why a line of code exists. Stages 1 to 3 and the import
+stage of [docs/roadmap.md](docs/roadmap.md) are built: capture, commit linking, history
 sharing, history search, the session brief, the code graph,
 `ctx why/sessions/show/forget`, `ctx find/brief`, `ctx code/impact`,
-`ctx stats`. Architecture:
+`ctx import`, `ctx stats`. Architecture:
 [docs/architecture.md](docs/architecture.md).
 
 Prerequisites: Git, Claude Code with plugin support, [uv](https://docs.astral.sh/uv/).
@@ -84,6 +84,36 @@ brief, the prompt brief, `ctx find`, `ctx code` and `ctx impact`. Then run
 `ctx init` again, so that the CLAUDE.md block no longer has their lines.
 `ctx why` keeps working. `brief = false` turns off only the session brief.
 `prompt_brief = false` turns off only the prompt brief.
+
+## Import past work
+
+`ctx import` shows Claude Code sessions of this repository that are still on
+disk, and Markdown files that look like decisions or design. `ctx init` in a
+repository with past work prints how much it found.
+
+    ctx import                                  # preview; writes nothing, prints a token
+    ctx import --offer TOKEN --all              # import everything offered
+    ctx import --offer TOKEN --sessions         # only sessions (or --documents)
+    ctx import --offer TOKEN --take 1,3,5-7     # chosen item numbers
+    ctx import --offer TOKEN --decline 2,4      # never offer these again
+    ctx import --declined                       # preview with declined items marked
+
+- Every form that writes needs the token of a fresh preview. If the list
+  changed since, the command asks you to run the preview again.
+- Sessions are read from `$CLAUDE_CONFIG_DIR/projects`, or `~/.claude/projects`
+  when that variable is not set. Claude Code deletes transcripts after
+  `cleanupPeriodDays` (30 by default); the preview says when the oldest one goes.
+- A session in use right now, and one already captured, is not offered.
+- A commit is linked to an imported session only when that session ran the
+  `git commit` and its result names the commit. `git commit -q` and commits
+  that carry an `AI-Session` trailer stay unlinked.
+- Chosen documents go into `[documents] paths` in `.wscontext/config.toml`.
+  Commit that file. `ctx find --kind document` searches them. Documents never
+  appear in the briefs.
+- Nothing is pushed by the import. With sync set up, imported sessions go out
+  with the next `git push` or `ctx sync`.
+- `ctx forget` removes a session but does not decline it. If its transcript
+  is still on disk, the next `ctx import` offers it again; decline it there.
 
 ## Search code
 

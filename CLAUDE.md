@@ -3,8 +3,7 @@
 
 A local harness for Claude Code that captures agent sessions, links them to Git
 commits, indexes them alongside a code graph, and gives the agent one search
-tool (`ctx`) over both. Stages 1 to 3 are built. Stages 4 and 5 are designed. The import stage is
-planned.
+tool (`ctx`) over both. Stages 1 to 3 and the import stage are built. Stages 4 and 5 are designed.
 The system itself is described in
 [docs/architecture.md](docs/architecture.md).
 
@@ -83,7 +82,7 @@ it instead of restating them — `→ ADR-0NN` refers to
 | Install the plugin locally | [README.md](README.md) § Install |
 | Understand why a decision was taken | [docs/design-rationale.md](docs/design-rationale.md) |
 | See the stages and how to run one | [docs/roadmap.md](docs/roadmap.md) |
-| Read the current stage's requirements | [docs/import-phase-1.md](docs/import-phase-1.md); finished stages are in [docs/hist/](docs/hist/) |
+| Read a stage's requirements | The import stage (built): [docs/import-phase-1.md](docs/import-phase-1.md). Stages 4 and 5 are not written yet. Finished stages are in [docs/hist/](docs/hist/) |
 | Build the current stage | `docs/build-plan-wscontext-phase-N.md` (local only) via `/kit:run-build-plan` |
 ## Execution guardrails
 

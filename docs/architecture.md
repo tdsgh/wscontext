@@ -4,7 +4,7 @@
 What wscontext is, today. Decisions behind it are in [adr.md](adr.md); the
 reasoning behind those is in [design-rationale.md](design-rationale.md).
 
-Stages 1 to 3 are built. § Stages tracks what each later stage delivers.
+Stages 1 to 3 and the import stage are built. § Stages tracks what each later stage delivers.
 Parts planned for stages 4 and 5 are marked.
 
 ## Purpose and data flow
@@ -73,7 +73,7 @@ existing ones) and the CLAUDE.md block. The store is split (→ ADR-004):
 
 ```
 .wscontext/                                        committed, working tree
-  config.toml                                      settings, redaction rules, sync remote
+  config.toml                                      settings, redaction rules, sync remote, documents list
   decisions/<id>.md                                reviewed decision records (stage 4)
 
 <git-common-dir>/wscontext/                        local, shared by all worktrees
@@ -86,7 +86,7 @@ existing ones) and the CLAUDE.md block. The store is split (→ ADR-004):
   index/graph.db                                   code graph                     derived
   index/graph.lock                                 graph writer lock              host-local
   index/graph.worker                               claim: a graph worker is starting   host-local
-  state/    active.json, account_ids.json, turns/<session>.json, materialized.json, pruned.json, last_fetch, last_sweep, locks/, rewrites/   host-local
+  state/    active.json, account_ids.json, import.json, turns/<session>.json, materialized.json, pruned.json, last_fetch, last_sweep, locks/, rewrites/   host-local
   logs/     hooks.jsonl, ctx-calls.jsonl (one rotated generation each, .1)                                                  host-local
 ```
 
@@ -102,6 +102,14 @@ existing ones) and the CLAUDE.md block. The store is split (→ ADR-004):
   these files back (src/wscontext/capture/worker.py:264-311). `ctx show`,
   `ctx why` and the index read a pruned copy from the ref. The index rows of a
   pruned session stay.
+- `state/import.json` holds the sessions and documents the operator declined in
+  `ctx import`, each with the time (src/wscontext/capture/importer.py:121-129).
+- `ctx import` and `ctx init` read Claude Code's own folder, read only. The
+  folder is `$CLAUDE_CONFIG_DIR/projects` when that variable is set, else
+  `~/.claude/projects`. Every `*.jsonl` directly inside a folder under it is a
+  candidate, whatever the folder is called
+  (src/wscontext/adapters/claude_home.py:14-20, 72-100; → ADR-054, ADR-055).
+  Nothing is written there.
 
 **Per sync remote — the history ref.** `refs/wscontext/history` holds `raw/`
 and `records/` only, written with Git plumbing (→ ADR-007, ADR-031). It sits
@@ -137,7 +145,8 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
 
 - **Index.** One SQLite file, `index/history.db`. One FTS5 table holds
   exchanges (prompt, reply, tool calls) and linked commit messages
-  (src/wscontext/index/db.py:25-27). When a session's source changes, the
+  (src/wscontext/index/db.py:25-27). Sections of Markdown documents are rows of
+  the same table (see Documents below). When a session's source changes, the
   whole session is re-indexed (src/wscontext/index/build.py:1-5). The capture
   worker re-indexes a session after each copy. The fetch worker refreshes the
   index after a fetch that changed history. `ctx find`, `ctx brief` and
@@ -152,6 +161,23 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
   any word fill the rest. A matching commit is listed right after the
   best-ranked session it is linked to (→ ADR-037)
   (src/wscontext/index/search.py:61-99).
+- **Documents.** A row with `kind='document'` is one section of a Markdown file
+  from `[documents] paths` in `.wscontext/config.toml`: `ref` is `<path>:<line>`,
+  `prompt` is the heading and `reply` the text, redacted before it is written.
+  A heading is ATX (`#` to `######`) outside a fenced block; it starts a section
+  that runs to the next heading. Text before the first heading is a section named
+  by the file. Each file's source row is `worktree:<path>` with size, mtime and
+  SHA-256 of the working-folder file; a file over 1 MB is skipped
+  (src/wscontext/index/docs.py:7-52, src/wscontext/index/build.py:427-481).
+  `ctx find` and `ctx rebuild` refresh the document rows
+  (src/wscontext/cli/find.py:78, src/wscontext/cli/rebuild.py:24), and so does
+  an import (src/wscontext/capture/importer.py:527). `--kind document` selects
+  them. `--branch`, `--author` and `--since` leave them out; `--file` matches a
+  document by its own path (src/wscontext/index/search.py:105-127). They are
+  searched only through `ctx find` (→ ADR-059).
+- **Index schema.** Version 4: `sessions.imported` marks an imported session,
+  and document rows exist. A different version recreates the file
+  (src/wscontext/index/db.py:8, 16-28).
 - **Brief.** Inside the `SessionStart` hook, `capture/brief.py` opens the index
   read-only and builds a brief of about 500 tokens
   (src/wscontext/capture/brief.py:15,51). It returns nothing when the index is
@@ -161,7 +187,10 @@ an SSH key loaded in the SSH agent, or a Git credential helper.
   distinctive words. It returns up to 3 past sessions within about 300 tokens
   (src/wscontext/capture/brief.py:18,90-114). It returns nothing unless a past
   exchange clears a strict relevance floor
-  (src/wscontext/index/search.py:186-287; → ADR-048).
+  (src/wscontext/index/search.py:186-287; → ADR-048). Its matches and counts
+  take only session rows, so a document never appears in it and never moves its
+  floor (src/wscontext/index/search.py:241, 246, 280;
+  src/wscontext/capture/brief.py:98-100; → ADR-059).
 - **Retrieval switches.** `[retrieval] enabled = false` turns off the brief, the
   prompt brief and search (→ ADR-036); `ctx code` and `ctx impact` follow it
   (→ ADR-044). `brief = false` turns off only the brief. `prompt_brief = false`
@@ -290,6 +319,8 @@ Every record carries a schema version and the Git author who produced it.
   tokens it was given and which sessions that brief named (never the prompt
   text), and transcript sizes in bytes (source, stored, and stored per kind of
   entry). Readers still accept schema 1 (src/wscontext/store/records.py:36-57).
+  `imported_at`, set only by `ctx import`, is a field with no schema bump
+  (src/wscontext/store/records.py:60-61; → ADR-056).
 - **Event** — one prompt, assistant message or tool call in a session, with role
   and timestamp. Lives in the raw transcript; the index stores exchanges
   (prompt plus response).
@@ -311,7 +342,8 @@ Every record carries a schema version and the Git author who produced it.
 | Config | Loads `.wscontext/config.toml` into dataclasses (→ ADR-016) | `src/wscontext/config.py` | 1 |
 | Store | Resolves the store under the Git common dir; reads and writes records | `src/wscontext/store/` | 1 |
 | Hook handlers | One handler per Claude Code event; exit 0, bounded time (→ ADR-009) | `src/wscontext/capture/` | 1 |
-| Transcript adapter | Versioned parser of Claude Code transcripts (→ ADR-002) | `src/wscontext/adapters/` | 1 |
+| Transcript adapter | Versioned parser of Claude Code transcripts (→ ADR-002); `claude_home.py` lists the transcripts in Claude Code's folder (→ ADR-054) | `src/wscontext/adapters/` | 1 |
+| Importer | `ctx import`: finds past sessions, the commits they made and documents; writes each accepted session whole through the live-capture path; links a commit only through its own `git commit` result (→ ADR-055, ADR-056, ADR-057, ADR-058, ADR-060) | `src/wscontext/capture/importer.py`, `src/wscontext/cli/import_.py` | Import |
 | Redactor | Pattern rules applied before every write, including the operator's account IDs by digest (→ ADR-006, ADR-046) | `src/wscontext/redact/` | 1 |
 | History ref | Plumbing writer, union merge, fetch and push of `refs/wscontext/history` (→ ADR-007, ADR-008, ADR-031) | `src/wscontext/history/` | 1 |
 | Git hooks | Shims plus handlers for trailer, checkpoint, rewrite, push; chaining installer | `src/wscontext/githooks/` | 1 |
@@ -326,7 +358,7 @@ Every record carries a schema version and the Git author who produced it.
 
 ## Stages
 
-Stages 1 to 3 are built and passed their acceptance gates. Stages and their gates
+Stages 1 to 3 and the import stage are built and passed their acceptance gates. Stages and their gates
 are in [roadmap.md](roadmap.md).
 
 | Stage | Delivers | Requirements | Status |
@@ -334,7 +366,7 @@ are in [roadmap.md](roadmap.md).
 | 1 — Capture and trace | Plugin, capture, redaction, commit linking, history sync, `ctx why/sessions/show/forget`, `ctx stats` | [wscontext-phase-1.md](hist/wscontext-phase-1.md) | built |
 | 2 — History search | FTS5 index, `ctx find`, session brief, skill and CLAUDE.md block, adoption stats, idle-session finalization, stored-volume reduction, retention pruning, moving shared history out of the branches | [wscontext-phase-2.md](hist/wscontext-phase-2.md) | built |
 | 3 — Code graph | Graph with switchable language parts, `ctx code`, `ctx impact`, `ctx why` on a name, refresh at query time and from Git hooks, code stats, tool names out of search, the on/off benchmark | [wscontext-phase-3.md](hist/wscontext-phase-3.md) | built |
-| Import — past work | Preview and import of past sessions, the commits they made, and decision and design documents, in a repository already in progress | [import-phase-1.md](import-phase-1.md) | not built |
+| Import — past work | Preview and import of past sessions, the commits they made, and decision and design documents, in a repository already in progress | [import-phase-1.md](import-phase-1.md) | built |
 | 4 — Distillation and semantic search | Decision records with supersession, local embeddings, hybrid ranking | not written | not built |
 | 5 — Finalize | Release, Windows verification, purge and uninstall polish | not written | not built |
 
@@ -403,6 +435,26 @@ are in [roadmap.md](roadmap.md).
   text each tool call was given, not the tool's name (→ ADR-045).
 - Background fetches and pushes cannot ask for a credential. Without a
   credential that works with no prompt, they fail, and `ctx doctor` warns.
+- Import links a commit only through the summary line of its own `git commit`
+  result. `git commit -q` prints none, and Claude Code may cut the output
+  before it, so those commits stay unlinked (→ ADR-057).
+- A link made by one import run never moves to a session imported in a later
+  run, even when the later session's result came first (→ ADR-057).
+- A commit with an `AI-Session` trailer is never linked by import, even when
+  this machine has no checkpoint for it. It stays unlinked here until the
+  history that holds its checkpoint is fetched
+  (src/wscontext/capture/importer.py:238-250).
+- Documents share one ranking with sessions. In the gate's ten queries a
+  document took the top two places for one session question, and no document
+  section reached the top 10 for one document question (→ ADR-059).
+- Adding document rows changes bm25 term statistics, so a session's raw score
+  can shift. Two close sessions can swap places in `ctx find` and in the prompt
+  brief's pick (→ ADR-059).
+- A forgotten session whose transcript is still in Claude Code's folder is
+  offered again by the next `ctx import`. Forget says so in its output and
+  does not decline it (src/wscontext/cli/forget.py:82-83; → ADR-060).
+- The cleanup period shown by `ctx import` ignores managed settings
+  (src/wscontext/adapters/claude_home.py:23-37).
 - The suite fails on any warning (pyproject.toml:33). A SQLite connection that
   is freed only when an xdist worker shuts down is not reported; run with
   `-n 0` to catch it.

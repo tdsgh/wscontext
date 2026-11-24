@@ -956,3 +956,151 @@ FILE:START-END`, and the note says to rerun with a line range
 - A `ctx impact` target that matches definitions with different qualnames or in
   different files still asks the caller to pick one.
 - To see the session behind one of the definitions, use the line range.
+
+### ADR-054 — The Claude Code adapter reads `CLAUDE_CONFIG_DIR`
+
+**Decision.** Transcripts are read from `$CLAUDE_CONFIG_DIR/projects` when the
+variable is set and non-empty, else from `~/.claude/projects`. One function
+reads the variable: `config_dir()` in
+src/wscontext/adapters/claude_home.py:14-16. It is the only place in
+application code that reads the environment.
+
+**Implications.**
+- This is a root-level exception to `.claude/rules/kit-python-config.md`,
+  written in `CLAUDE.md` § Cross-cutting rules.
+- Tests replace `config_dir` with an autouse fixture, so no test reads the
+  operator's real folder (`tests/conftest.py`).
+- The acceptance script sets `CLAUDE_CONFIG_DIR` to a throwaway folder for each
+  `ctx` call.
+- The account file is still `~/.claude.json` only (→ ADR-046).
+
+### ADR-055 — A transcript belongs to the repository by its recorded working folder
+
+**Decision.** Every folder under `projects/` is scanned, and its name is
+ignored. A transcript belongs to the repository when the first `cwd` it records
+is the repository root, a worktree from `git worktree list --porcelain`, or
+inside one. Paths are compared after `resolve()` and `os.path.normcase`
+(src/wscontext/capture/importer.py:132-173).
+
+**Implications.**
+- A `cwd` that still exists must have a Git top level equal to the root or a
+  worktree. A separate repository nested inside the folder is left out.
+- A `cwd` that no longer exists is accepted by path alone, so the session of a
+  removed worktree inside the repository folder is still offered.
+- A file with no `cwd` line, an unsafe name stem, or a stem that is not its
+  `sessionId` is skipped (src/wscontext/adapters/claude_home.py:51-100).
+- The same session ID in two folders is offered once; the first found wins.
+
+### ADR-056 — An imported session record carries `imported_at`, with no schema bump
+
+**Decision.** `SessionRecord` gains `imported_at`, the time of the import. Live
+capture never sets it. The session schema stays at 2
+(src/wscontext/store/records.py:60-61).
+
+**Implications.**
+- A reader without the field ignores it. A teammate on an older version sees an
+  imported session as an ordinary finished one.
+- An imported record is built from the transcript alone. `head_start`,
+  `head_end`, `ended_by`, `retrieval`, `brief_tokens` and the prompt-brief
+  fields stay unset (src/wscontext/capture/importer.py:400-431).
+- `session_status` returns `imported` when the field is set
+  (src/wscontext/cli/data.py:61-63). `ctx sessions`, `ctx show`, `ctx why`,
+  `ctx find` and `ctx stats` show the mark.
+- The `turns` and `queries` stats views and everything built on them leave
+  imported sessions out (src/wscontext/cli/stats.py:35-40). `ctx stats data`
+  counts them apart (src/wscontext/stats/data.py:390).
+- A local record with `imported_at` that is not on the local history tip is the
+  trace of an interrupted import. It is offered again, and importing it
+  finishes the job (src/wscontext/capture/importer.py:327).
+
+### ADR-057 — An import links a commit only through its own `git commit` result
+
+**Decision.** A tool use is a `git commit` when its tool is `Bash` and its
+command matches `\bgit\b[^\n|;&]*\bcommit\b`. Each line of its result that
+matches Git's summary line, `[<branch> <sha>] `, names a commit
+(src/wscontext/capture/importer.py:43-45, 180-188). The prefix is resolved with
+`git cat-file --batch-check` and links only when it names exactly one commit
+object (src/wscontext/capture/importer.py:201-213).
+
+**Implications.**
+- Subagent tool uses count for the parent session.
+- When several sessions name one commit, the earliest result timestamp wins and
+  ties go to the smaller session ID.
+- A commit with a checkpoint record, or with an `AI-Session` trailer, is never
+  linked, even when this machine holds no checkpoint for it
+  (src/wscontext/capture/importer.py:224-251).
+- `git commit -q` prints no summary line, so its commit stays unlinked.
+- A link made by one run stays with its session. A session imported in a later
+  run never takes it, even when its result came first.
+- Exception: a local checkpoint that is not on the history tip and names
+  exactly one candidate session is that session's own interrupted link. The
+  rerun finishes it (src/wscontext/capture/importer.py:241-247).
+- Links are never guessed from time or from changed files.
+
+**Guardrail.** The summary-line match is stricter than "any hex token" on
+purpose. Do not loosen it.
+
+### ADR-058 — Every write of `ctx import` needs the offer token of a fresh preview
+
+**Decision.** The preview numbers its items and prints a token: the first 8
+hex digits of the SHA-256 of the ordered item keys
+(src/wscontext/capture/importer.py:396). Every form that writes needs
+`--offer TOKEN`. The command recomputes the offer, and refuses with "the list
+changed; run `ctx import` again" when the token differs
+(src/wscontext/cli/import_.py:17, 135-138, 158-159).
+
+**Implications.**
+- The preview writes nothing.
+- A session that goes idle between the preview and the choice cannot shift the
+  numbers.
+- Declined items shown by `--declined` count in the token. A call that takes
+  one by number repeats `--declined`.
+- `--offer` without a choice, and a choice without `--offer`, are errors.
+- Declined sessions and documents are kept in `state/import.json`, host-local
+  (src/wscontext/capture/importer.py:121-129). Taking a declined item removes it
+  from the file.
+
+### ADR-059 — Documents are rows in the one history index and never appear in the briefs
+
+**Decision.** A Markdown document section is a `kind='document'` row of the
+same FTS5 table as sessions and commits. Index schema 4 adds the rows and
+`sessions.imported` (src/wscontext/index/db.py:8, 16-28). The session brief
+reads the `sessions` table, and the prompt brief counts and matches only
+`kind='session'` rows (src/wscontext/index/search.py:241, 246, 280;
+src/wscontext/capture/brief.py:98-100).
+
+**Implications.**
+- A document never appears in either brief and never changes the prompt
+  brief's floor.
+- bm25 takes term statistics and the average row length from the whole table.
+  Documents therefore change every session's raw score, in `ctx find` and in
+  the prompt brief's pick of up to 3. Same sessions, same order and same text
+  hold for the test corpus; two close sessions could swap in a different
+  corpus. The operator accepted this at the stage gate.
+- `ctx find` ranks documents with sessions and commits. The gate's ten queries
+  were judged acceptable, with one session question where documents took the
+  top two places and one document question with no document in the top 10
+  (→ roadmap.md § Import).
+- `[retrieval] enabled = false` turns off `ctx find`, so documents are out of
+  search with no extra switch.
+- A document is read from the working folder, not from Git history.
+
+**Guardrail.** One table, not two. A second table would leave session scores
+untouched but leave `ctx find` merging two rankings on different scales.
+
+### ADR-060 — `ctx forget` deletes; it never declines
+
+**Decision.** `ctx forget` removes a session, imported or captured live, and
+does not touch `state/import.json`. Declining is done only in `ctx import`.
+When the session's transcript is still in Claude Code's folder, forget's
+output says that `ctx import` will offer it again
+(src/wscontext/cli/forget.py:20-21, 82-83).
+
+**Implications.**
+- After a forget, the next `ctx import` lists the session like any other past
+  session. `ctx import --offer TOKEN --decline N` keeps it out for good.
+- `ctx import --all` run right after a forget brings the session back.
+- The hint is the same for an imported and a live-captured session.
+
+**Guardrail.** Keep forget and decline separate; forget does not decline even
+an imported session.

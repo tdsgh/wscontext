@@ -5,7 +5,7 @@ import json
 import re
 import shutil
 
-from wscontext.capture.importer import decline_session
+from wscontext.adapters import claude_home
 from wscontext.capture.state import active_path, read_json, turn_state_path, update_json
 from wscontext.cli.output import Reply, error
 from wscontext.config import Config
@@ -14,11 +14,12 @@ from wscontext.history.branch import (commit_paths, ls_blobs, read_tip, remove_p
 from wscontext.history.sync import shared_paths, shared_tips
 from wscontext.store.locks import FileLock, LockTimeout
 from wscontext.store.paths import StorePaths, is_safe_name
-from wscontext.store.records import (RecordError, read_checkpoint, read_session,
-                                     write_checkpoint)
+from wscontext.store.records import RecordError, read_checkpoint, write_checkpoint
 
 TRAILER_NOTE = ("Commits made in this session keep their AI-Session trailer: Git history is not "
                 "rewritten. The trailer is only an ID and no longer resolves to anything.")
+IMPORT_NOTE = ("Its transcript is still in Claude Code's folder, so `ctx import` offers it again. "
+               "Decline it there if you don't want it back.")
 
 
 def add_arguments(parser) -> None:
@@ -77,14 +78,13 @@ def run(args, store: StorePaths, config: Config) -> Reply:
             links.append(rec)
     dropped = [r.sha for r in links if r.session_ids == [sid]]
     trimmed = [r.sha for r in links if r.session_ids != [sid]]
+    # forget never declines: that is a choice made in `ctx import`
+    on_disk = any(claude_home.projects_dir().glob(f"*/{sid}.jsonl"))
+    notes = [TRAILER_NOTE, *([IMPORT_NOTE] if on_disk else [])]
     result = {"forgotten": not args.dry_run, "dry_run": args.dry_run, "session_id": sid,
               "removed": paths, "checkpoints_removed": dropped, "checkpoints_updated": trimmed,
-              "notes": [TRAILER_NOTE]}
+              "notes": notes}
     if not args.dry_run:
-        try:
-            imported = read_session(store, sid).imported_at is not None
-        except (OSError, RecordError):
-            imported = False
         try:
             with FileLock(store.state / "locks" / f"worker-{sid}.lock", stale_after=300,
                           timeout=5), \
@@ -93,15 +93,13 @@ def run(args, store: StorePaths, config: Config) -> Reply:
         except LockTimeout:
             return error(f"session {sid} is being written by a worker; try again shortly",
                          args.json)
-        if imported:  # its transcript is still on disk: never offer it again (D15)
-            decline_session(store, config, sid)
     if args.json:
         return Reply(json.dumps(result, indent=2))
     verb = "Would remove" if args.dry_run else "Forgot session " + sid + ". Removed"
     lines = [f"{verb}:", *(f"  {p}" for p in paths)]
     lines += [f"  checkpoint {sha[:12]} (no other session)" for sha in dropped]
     lines += [f"  link to {sid} in checkpoint {sha[:12]}" for sha in trimmed]
-    return Reply("\n".join([*lines, "", TRAILER_NOTE]))
+    return Reply("\n".join([*lines, "", *notes]))
 
 
 def _remove(store: StorePaths, config: Config, sid: str, paths: list[str], links: list) -> None:

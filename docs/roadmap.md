@@ -227,6 +227,21 @@ shared repository that is already in progress.
   nothing; accepted items are imported and declined ones are not; a commit is
   linked only through its own `git commit` result; a second run imports
   nothing new.
+- **Gate result (2026-11-24, plugin 0.5.0):** passed. The offline suite had 903
+  tests and no warnings. `acceptance/import_past.py` passed 11 of 11 scenarios
+  without `claude -p`, and its `agent_asks` scenario passed on a paid run. In
+  `corpus_links`, 25 sessions were imported and their 25 links equal the
+  recorded checkpoints; unlinked commits went from 28 to 3. `stage1.py` 9 of 9,
+  `stage2.py` 5 of 5 and `stage3.py` 1 of 1 passed on their `claude -p`
+  scenarios. The offline runs of `stage1.py`, `stage2.py`, `stage3.py` and
+  `graph_rust.py` passed. Ranking check: in ten `ctx find` queries over this
+  repository's `docs/` and its sessions, a document came first in 4 of 5
+  document questions and a session was in the top 3 for all 5 session
+  questions. The operator judged it acceptable. Two cases are noted: one
+  document question had no document in the top 10, and one session question had
+  document sections in the top two places (→ ADR-059). Two recorded data
+  changes in `corpus_links` and the other deviations are in the build plan's
+  closing notes.
 
 ## Stage 4 — Distillation and semantic search
 

@@ -5,8 +5,7 @@ it improves development, and how it affects Claude Code. The system itself is
 described in [architecture.md](architecture.md); decisions are in
 [adr.md](adr.md).
 
-Stages 1 to 3 are built. Stage 4 is designed. The import stage, for
-repositories already in progress, is planned. Everything below marked
+Stages 1 to 3 and the import stage are built. Stage 4 is designed. Everything below marked
 stage 4 describes the designed plugin. The effects on quality, speed and cost
 are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
 ([roadmap.md](roadmap.md)), not measured results.
@@ -58,6 +57,17 @@ are expected outcomes that the on/off benchmark has to prove at Alpha and Beta
   staleness window.
 - Stored transcripts keep only what wscontext reads. Local copies older than
   the retention period are removed.
+
+**Bring in past work** (import stage)
+- `ctx import` shows the Claude Code sessions of the repository that are still
+  on disk, the commits they made, and Markdown files that look like decisions
+  or design. It writes nothing. You then import all of it, part of it, or
+  nothing, and decline items you never want offered again.
+- A commit is linked to an imported session only when that session ran the
+  `git commit` itself. Nothing is guessed from time or changed files.
+- Imported documents are searched with `ctx find --kind document`. They never
+  appear in the briefs.
+- `ctx init` says how much past work it found and imports nothing.
 
 **Search code** (stage 3)
 - `ctx code <name>` answers "where is it defined?"

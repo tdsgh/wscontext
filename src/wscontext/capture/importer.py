@@ -122,12 +122,6 @@ def state_path(store: StorePaths) -> Path:
     return store.state / "import.json"
 
 
-def decline_session(store: StorePaths, config: Config, session_id: str) -> None:
-    """Remember a session as declined, so no later import offers it."""
-    update_json(state_path(store), lambda d: d.setdefault("declined_sessions", {}).__setitem__(
-        session_id, now_iso()), config)
-
-
 def _declined(store: StorePaths) -> tuple[dict, dict]:
     data = read_json(state_path(store))
     sessions, documents = data.get("declined_sessions"), data.get("declined_documents")
